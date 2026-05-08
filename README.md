@@ -82,17 +82,21 @@ This is **not real-time collaboration**. Treat Quire as an annotated turn-taking
 
 ### Keyboard shortcuts
 
+Press `?` at any time to open the in-app shortcut help. The scheme deliberately avoids browser-reserved keys (`⌘N`, `⌘W`, `⌘T`, `⌘[`/`⌘]`) that the browser swallows before the app sees them.
+
 | Shortcut | Action |
 |---|---|
-| `⌘K` / `Ctrl+K` | Command palette |
-| `⌘N` / `Ctrl+N` | New leaf |
-| `⌘E` / `Ctrl+E` | Toggle edit mode on focused leaf |
-| `⌘W` / `Ctrl+W` | Close focused leaf |
-| `⌘[` / `⌘]` | Move focused leaf left / right |
+| `⌘K` / `Ctrl+K` | Command palette (works in editor too) |
+| `⌘J` / `Ctrl+J` | New leaf |
+| `⌘Return` / `Ctrl+Enter` | Toggle edit mode |
+| `⌘⌫` / `Ctrl+Backspace` | Close focused leaf |
+| `⌘⇧[` / `⌘⇧]` | Move focused leaf left / right |
+| `Tab` / `Shift+Tab` | Focus next / previous leaf |
 | `⌘S` / `Ctrl+S` | Save Wiki |
 | `⌘,` / `Ctrl+,` | Open settings |
-| `⌘⇧T` / `Ctrl+Shift+T` | Toggle Tasks view |
-| `Esc` | Close palette / settings |
+| `⌘⇧K` / `Ctrl+Shift+K` | Toggle Tasks view |
+| `?` | Show keyboard shortcuts |
+| `Esc` | Close palette / drawer / dialog |
 
 Inside the palette: `>` for commands, `#` for tags, `@` for authors, `!` for tasks, `/` for full-text body search.
 
@@ -211,6 +215,7 @@ Issues and pull requests are welcome. A few notes:
 | v1.0 | Single-file build, layered persistence (Tier A/B/C), wikilinks, backlinks, tags, command palette, settings drawer |
 | v1.1 | Multi-user attribution: per-browser identity, author chips, People sidebar, `@` palette mode, schema migration |
 | v1.2 | Tasks: interactive checkboxes that surgically edit markdown, optional `@YYYY-MM-DD` due dates, system-wide Tasks view, `!` palette mode, sidebar Tasks row + Upcoming list |
+| v1.2.1 | Keyboard shortcut correction: avoids browser-reserved keys (`⌘W`, `⌘N`, `⌘T`, `⌘[`/`⌘]`), layout-independent matching via `event.code`, LIFO modal handler stack, in-app `?` help dialog |
 
 The HTML data block carries `schemaVersion`. Old files auto-upgrade on load — you can always open a v1 file in a v1.1 build, never the other way around.
 

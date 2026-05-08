@@ -12,9 +12,10 @@ import { Icon } from './components/Icon';
 import { UserOnboardingModal } from './components/UserOnboardingModal';
 import { AuthorChip } from './components/AuthorChip';
 import { TasksView } from './components/TasksView';
+import { ShortcutHelpDialog } from './components/ShortcutHelpDialog';
 import { buildIndex, tagCounts } from './lib/wikilinks';
 import { formatBytes, formatRel, uuid } from './lib/utils';
-import { useGlobalHotkeys } from './lib/hotkeys';
+import { ShortcutAction, useShortcuts } from './lib/hotkeys';
 import { findUser, leafCountsByAuthor, makeUser, migrateToV2 } from './lib/users';
 import type { AccentName, ActiveFilter, FontPair, ThemeName, UserID, WikiState } from './types';
 import { DEFAULT_SETTINGS } from './types';
@@ -137,6 +138,9 @@ export default function App() {
   const [fileSize, setFileSize] = useState<number>(0);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [tasksFocused, setTasksFocused] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [shortcutHintShown, setShortcutHintShown] = useState(true);
+  const [baselineLeafCount, setBaselineLeafCount] = useState<number | null>(null);
 
   // ─── boot sequence ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -171,6 +175,9 @@ export default function App() {
         if (!savedId) {
           useWikiStore.getState().setNeedsIdentity(true);
         }
+        const seenHint = await persistence.getMeta<boolean>('hint:shortcuts');
+        setShortcutHintShown(!!seenHint);
+        setBaselineLeafCount(chosen.leaves.length);
         setHydrated(true);
       };
 
@@ -239,6 +246,19 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ─── first-time shortcut hint ──────────────────────────────────────────
+  useEffect(() => {
+    if (!hydrated || shortcutHintShown || baselineLeafCount === null) return;
+    if (leaves.length - baselineLeafCount >= 2) {
+      setShortcutHintShown(true);
+      persistence.setMeta('hint:shortcuts', true);
+      useWikiStore.getState().pushToast({
+        message: 'Tip · press ? anytime to see keyboard shortcuts.',
+        ttl: 6000,
+      });
+    }
+  }, [hydrated, shortcutHintShown, baselineLeafCount, leaves.length]);
 
   // ─── persistence status subscription ───────────────────────────────────
   useEffect(() => {
@@ -440,51 +460,101 @@ export default function App() {
     [doManualSave, store],
   );
 
-  // ─── hotkeys ──────────────────────────────────────────────────────────
-  useGlobalHotkeys(
-    useCallback(
-      (e: KeyboardEvent) => {
-        const meta = e.metaKey || e.ctrlKey;
-        if (meta && e.key.toLowerCase() === 'k') {
-          e.preventDefault();
-          store.setPaletteOpen(true);
-          store.setPaletteQuery('');
-        } else if (meta && e.key.toLowerCase() === 'n') {
-          e.preventDefault();
+  // ─── leaf navigation helpers ──────────────────────────────────────────
+  const focusAdjacentLeaf = useCallback(
+    (dir: -1 | 1) => {
+      const ids = openIds;
+      if (ids.length === 0) return;
+      const i = focusedId ? ids.indexOf(focusedId) : -1;
+      const next = i < 0 ? 0 : (i + dir + ids.length) % ids.length;
+      store.setFocused(ids[next]);
+      setTasksFocused(false);
+      requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-leaf-id="${ids[next]}"]`);
+        if (el)
+          (el as HTMLElement).scrollIntoView({
+            behavior: 'smooth',
+            block: 'nearest',
+            inline: 'nearest',
+          });
+      });
+    },
+    [openIds, focusedId, store],
+  );
+
+  // ─── shortcut handler (top-level fallback; modals register first) ─────
+  const handleShortcut = useCallback(
+    (action: ShortcutAction): boolean => {
+      switch (action) {
+        case 'palette.open':
+          store.setPaletteOpen(!paletteOpen);
+          if (!paletteOpen) store.setPaletteQuery('');
+          return true;
+        case 'leaf.new':
           store.newLeaf('');
-        } else if (meta && e.key.toLowerCase() === 'e' && focusedId) {
-          e.preventDefault();
-          store.setEditing(editingId === focusedId ? null : focusedId);
-        } else if (meta && e.key.toLowerCase() === 'w' && focusedId) {
-          e.preventDefault();
-          store.closeLeaf(focusedId);
-        } else if (meta && e.key === '[' && focusedId) {
-          e.preventDefault();
-          store.moveLeaf(focusedId, -1);
-        } else if (meta && e.key === ']' && focusedId) {
-          e.preventDefault();
-          store.moveLeaf(focusedId, 1);
-        } else if (meta && e.key.toLowerCase() === 's') {
-          e.preventDefault();
+          return true;
+        case 'leaf.toggleEdit':
+          if (focusedId) {
+            store.setEditing(editingId === focusedId ? null : focusedId);
+            return true;
+          }
+          return false;
+        case 'leaf.close':
+          if (focusedId) {
+            store.closeLeaf(focusedId);
+            return true;
+          }
+          return false;
+        case 'leaf.moveLeft':
+          if (focusedId) {
+            store.moveLeaf(focusedId, -1);
+            return true;
+          }
+          return false;
+        case 'leaf.moveRight':
+          if (focusedId) {
+            store.moveLeaf(focusedId, 1);
+            return true;
+          }
+          return false;
+        case 'leaf.focusNext':
+          focusAdjacentLeaf(1);
+          return true;
+        case 'leaf.focusPrev':
+          focusAdjacentLeaf(-1);
+          return true;
+        case 'wiki.save':
           doManualSave();
-        } else if (meta && e.key === ',') {
-          e.preventDefault();
-          store.setSettingsOpen(true);
-        } else if (meta && e.shiftKey && e.key.toLowerCase() === 't') {
-          e.preventDefault();
+          return true;
+        case 'settings.toggle':
+          store.setSettingsOpen(!settingsOpen);
+          return true;
+        case 'tasks.toggle':
           setTasksOpen((prev) => {
             const next = !prev;
             if (next) setTasksFocused(true);
             return next;
           });
-        } else if (e.key === 'Escape') {
-          if (paletteOpen) store.setPaletteOpen(false);
-          if (settingsOpen) store.setSettingsOpen(false);
-        }
-      },
-      [focusedId, editingId, paletteOpen, settingsOpen, store, doManualSave, tasksOpen],
-    ),
+          return true;
+        case 'help.show':
+          setHelpOpen(true);
+          return true;
+        case 'esc':
+          // Modals register their own handlers ahead of this one.
+          return false;
+      }
+    },
+    [
+      paletteOpen,
+      settingsOpen,
+      focusedId,
+      editingId,
+      store,
+      doManualSave,
+      focusAdjacentLeaf,
+    ],
   );
+  useShortcuts(handleShortcut);
 
   // ─── drag handlers (river reorder) ────────────────────────────────────
   const draggingId = store.draggingId;
@@ -755,6 +825,10 @@ export default function App() {
         users={users}
         authoredCount={authoredCount}
         onUpdateUser={(id, patch) => store.updateUser(id, patch)}
+        onShowShortcuts={() => {
+          store.setSettingsOpen(false);
+          setHelpOpen(true);
+        }}
       />
 
       {showOnboarding && (
@@ -813,6 +887,8 @@ export default function App() {
           });
         }}
       />
+
+      <ShortcutHelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
 
       <ToastStack toasts={toasts} onDismiss={(id) => store.dismissToast(id)} />
 

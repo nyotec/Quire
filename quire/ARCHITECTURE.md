@@ -166,6 +166,47 @@ When a user updates their own profile (name/initials/color), the channel also
 posts `{ type: 'userUpdated', userId }` so other tabs can refresh affected
 chips without a full reload.
 
+## Keyboard shortcuts (v1.2.1)
+
+The first cut of Quire used `⌘N`/`⌘W`/`⌘[`/`⌘]`/`⌘⇧T` for app actions. None of
+those work in real browsers — the OS or browser intercepts them before the app
+sees the keydown. `⌘W` was the worst: pressing it doesn't fail to close the
+leaf, it closes the **tab** (and on Tier B / Tier C, you lose unsaved IDB work
+if the tab closes before the next save tick).
+
+The current scheme avoids every Category-1 (uninterceptable) browser shortcut:
+
+- `⌘N` (new window), `⌘T` (new tab), `⌘W` (close tab), `⌘⇧T` (reopen tab)
+- `⌘L` (address bar), `⌘R` (reload), `⌘+`/`⌘-`/`⌘0` (zoom)
+- `⌘[` / `⌘]` (Safari back/forward navigation)
+
+What replaced them is in `src/lib/hotkeys.ts`. Three properties of the
+implementation:
+
+1. **Platform-aware modifier**. `isMac` is computed once at module load; on Mac
+   we listen for `metaKey`, on Windows/Linux for `ctrlKey`, and we explicitly
+   reject the *other* primary modifier so `Ctrl+K` on Mac does not collide with
+   `Cmd+K`.
+2. **Layout-independent key matching**. Bindings are keyed on `event.code`
+   (`KeyJ`, `BracketLeft`, etc.), not `event.key`. This makes shortcuts work
+   for Dvorak, AZERTY, German QWERTZ, and other layouts. The exception is
+   `?`, which we match by `event.key === '?'` because we want the *character*
+   produced (on AZERTY `?` lives on `Shift+Comma`, etc.) rather than the
+   physical key position.
+3. **LIFO handler stack**. `registerShortcutHandler` prepends to a list. The
+   document-level `keydown` listener iterates handlers in registration order,
+   so the most recently mounted modal (palette → settings drawer → help
+   dialog → leaf-card edit mode) gets first dibs at consuming an action. A
+   handler returns `true` to consume; anything not consumed simply passes
+   through (we never call `preventDefault` for unmatched events).
+
+`isInputFocused()` checks `document.activeElement` against `<textarea>`,
+non-button `<input>`, and `contenteditable` elements. Each binding has an
+`inInput` flag — `palette.open`, `wiki.save`, `settings.toggle`,
+`leaf.toggleEdit`, and `esc` fire even while typing; `leaf.new`, `leaf.close`,
+`leaf.move*`, `tasks.toggle`, `?`, and `Tab` do not, so they don't conflict
+with regular text input.
+
 ## Tasks (v1.2)
 
 Tasks are not a separate noun in the data model. They are a *property of lines*
