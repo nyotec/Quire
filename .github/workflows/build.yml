@@ -1,0 +1,48 @@
+name: Build Quire
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: quire
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: quire/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Build single-file bundle
+        run: npm run build
+
+      - name: Verify dist/quire.html
+        run: |
+          test -f dist/quire.html
+          test "$(ls dist | wc -l)" -eq 1
+          grep -q 'id="quire-data"' dist/quire.html
+          echo "dist/quire.html size: $(stat -c%s dist/quire.html) bytes"
+
+      - name: Upload quire.html
+        uses: actions/upload-artifact@v4
+        with:
+          name: quire-html
+          path: quire/dist/quire.html
+          if-no-files-found: error

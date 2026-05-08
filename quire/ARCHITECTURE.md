@@ -1,0 +1,177 @@
+# Architecture
+
+Quire is built as a single-page React app whose entire runtime — including
+React, all components, all CSS, and the user's notes data — is bundled into one
+HTML file via Vite's `vite-plugin-singlefile`. There are no runtime requests; it
+works fully offline from `file://`.
+
+## Top-level flow
+
+```
+                ┌──────────────────────┐
+   index.html → │ quire.html (single   │ ← saveToFile() rewrites the
+                │ file, contains:      │   <script id="quire-data">
+                │   • inlined React    │   block in place.
+                │   • inlined CSS      │
+                │   • <script          │
+                │     id="quire-data"> │
+                │     {WikiState}      │
+                │     </script>        │
+                └──────────────────────┘
+```
+
+## Modules
+
+```
+src/
+├── main.tsx               // mounts <App />
+├── App.tsx                // wires store ↔ persistence ↔ UI
+├── styles.css             // entire prototype CSS, ported as-is
+├── types.ts               // Leaf, WikiState, Settings, SaveStatus
+├── store/
+│   ├── useWikiStore.ts    // Zustand store; auto-save on every mutation
+│   └── persistence.ts     // WikiPersistence class (Tier A/B/C)
+├── lib/
+│   ├── markdown.tsx       // small markdown → React nodes renderer
+│   ├── wikilinks.ts       // buildIndex / tagCounts
+│   ├── search.ts          // Fuse.js setup
+│   ├── hotkeys.ts         // useGlobalHotkeys hook
+│   └── utils.ts           // slug, uuid, formatRel, debounce, …
+├── components/
+│   ├── TopBar.tsx
+│   ├── Sidebar.tsx
+│   ├── LeafCard.tsx
+│   ├── CommandPalette.tsx
+│   ├── SettingsDrawer.tsx
+│   ├── Toast.tsx
+│   └── Icon.tsx
+└── seed/welcome.ts        // first-run welcome leaf
+```
+
+## Boot sequence
+
+`App` mount runs this in order:
+
+1. **Read embedded data** — `persistence.loadFromHTML()` parses
+   `<script id="quire-data" type="application/json">`. If empty/missing, we
+   seed with a fresh wikiId and a single welcome leaf.
+2. **Open IndexedDB** (`db: quire`, stores: `drafts`, `handles`, `meta`).
+3. **Look up draft** at `draft:{wikiId}`. If `draft.lastSaved > embedded.lastSaved`,
+   show the *Unsaved changes found — Restore?* modal. The user picks one.
+4. **Hydrate the Zustand store** with the chosen state.
+5. **Detect tier** (A/B/C):
+   - A — `'showSaveFilePicker' in window` → silent auto-save once the user
+     connects a file.
+   - B — File System Access API absent → IndexedDB auto-save + manual `⌘S`
+     downloads.
+   - C — IndexedDB itself unavailable → browser-only banner, JSON exports only.
+6. **If Tier A and a stored handle exists**, verify it via `queryPermission` /
+   `requestPermission`. On any failure, downgrade to Tier B for the session and
+   show an explanatory toast.
+7. **Subscribe to status updates** so the top-bar pill always reflects truth.
+8. **Open a `BroadcastChannel('quire:{wikiId}')`** so other tabs editing the
+   same file are notified after each successful write.
+
+## Save sequence
+
+Every mutating store action (creating / editing / pinning / deleting a leaf,
+opening / closing / reordering open leaves, changing settings) calls
+`scheduleSave()`:
+
+```
+mutation → scheduleSave() → debounce 500ms (Tier A) / 400ms (Tier B)
+                          ↓
+                  persistence.save(state)
+                          ↓
+              ┌────────────┴────────────┐
+              │                         │
+        Tier A path                 Tier B path
+              │                         │
+   1. saveDraftToIDB              1. saveDraftToIDB
+      (always — safety net)
+   2. acquire mutex
+      (isWriting = true,
+       coalesce with pendingState)
+   3. rebuildHTML(state):
+      - serialize state as JSON,
+        escaping `</` to `<\/`
+      - prepend `<!DOCTYPE html>\n`
+      - regex-replace the
+        <script id="quire-data">
+        block in place
+   4. handle.createWritable()
+      .write(html).close()
+   5. on success: notify('saved')
+      broadcast('updated')
+      clear pendingChanges
+   6. if pendingState != null,
+      tail-call saveTierA(pendingState)
+```
+
+The mutex (`isWriting` flag + `pendingState` slot) prevents two concurrent
+writes from racing — at most one writable is open against the file at a time;
+late mutations fold into a single follow-up write.
+
+`⌘S` (or the *Save Wiki* button / status pill click when dirty) calls
+`doManualSave`. In Tier A this just nudges `persistence.save`. In Tier B it
+calls `persistence.manualDownload`, which rebuilds the HTML and triggers a
+`Blob` + `<a download>` download.
+
+## The data block
+
+The data block is a `<script id="quire-data" type="application/json">…</script>`
+in `<head>`. We rewrite it via:
+
+```js
+/(<script\s+id="quire-data"[^>]*>)[\s\S]*?(<\/script>)/
+```
+
+…replacing the captured contents with the new JSON. **Crucially**, before
+inserting the JSON we replace `</` with `<\/` so any user-authored
+`</script>` text inside a leaf body cannot terminate the script tag early.
+
+## IndexedDB layout
+
+| Store | Key | Value |
+|---|---|---|
+| `drafts` | `draft:{wikiId}` | `{ state: WikiState, lastSaved: ISO }` |
+| `handles` | `fileHandle:{wikiId}` | `FileSystemFileHandle` (structured-cloned) |
+| `meta` | (reserved for future) | — |
+
+Handles are **structured-clonable** in modern Chromium — they serialize into
+IndexedDB directly. We never `JSON.stringify` them.
+
+## Cross-tab coordination
+
+Each tab opens `BroadcastChannel('quire:{wikiId}')` on boot. After a successful
+write, the writing tab posts `{ type: 'updated' }`; receiving tabs surface a
+"This file was updated in another tab — Reload" toast. Reloading re-reads the
+embedded block, which is now the most recent saved state.
+
+## Why no `localStorage`
+
+`localStorage` is synchronous, capped at ~5MB, and aggressively cleared on
+quota pressure. Wiki state — even small ones — easily exceeds that. We use it
+only for tiny UI state (the onboarding-dismissed flag) and even that is stored
+in the Zustand-persisted state instead, so it travels with the file.
+
+## Performance notes
+
+- The file size is monitored via `persistence.buildHTML(state).length` after
+  each hydrated mutation. Crossing 10MB triggers a one-time toast warning.
+- `outerHTML` rebuild starts to be measurable around ~5MB. The 400/500ms
+  debounce + the mutex keep it from running more than once per quiet pause.
+- Markdown rendering uses `useMemo` over `(exists, onWikilink, onTag)` per
+  leaf; backlinks are computed once via `useMemo(buildIndex(leaves), [leaves])`
+  shared across the whole tree.
+
+## What "single-file" buys you
+
+- **Portability**: email it, AirDrop it, drop it on a USB stick. It's just an
+  HTML file.
+- **Privacy**: no requests leave your machine. The `<script>`s are local; the
+  data is local; the renderer is local.
+- **Versioning**: copy the file to make a backup. Keep dated copies via
+  *Export snapshot HTML*.
+- **Forkability**: you can read the source by opening the file in a text editor.
+  Plugins/themes can be added by hand-editing if you ever need to.
