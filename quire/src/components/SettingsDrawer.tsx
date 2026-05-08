@@ -1,6 +1,10 @@
-import type { Settings, AccentName } from '../types';
+import { useEffect, useState } from 'react';
+import type { Settings, AccentName, User, UserID } from '../types';
 import { Icon } from './Icon';
 import { formatRel } from '../lib/utils';
+import { AuthorChip } from './AuthorChip';
+import { USER_COLORS } from '../lib/userColors';
+import { deriveInitials } from '../lib/users';
 
 const ACCENT_HEX: Record<AccentName, string> = {
   ochre: '#b8862e',
@@ -25,6 +29,10 @@ interface DrawerProps {
   lastSaved: string | null;
   tier: 'A' | 'B' | 'C';
   hasFileHandle: boolean;
+  currentUser: User | null;
+  users: User[];
+  authoredCount: number;
+  onUpdateUser: (userId: UserID, patch: Partial<User>) => void;
 }
 
 export function SettingsDrawer({
@@ -42,6 +50,10 @@ export function SettingsDrawer({
   lastSaved,
   tier,
   hasFileHandle,
+  currentUser,
+  users,
+  authoredCount,
+  onUpdateUser,
 }: DrawerProps) {
   if (!open) return null;
   return (
@@ -55,6 +67,15 @@ export function SettingsDrawer({
           </button>
         </div>
         <div className="q-drawer-body">
+          {currentUser && (
+            <IdentitySection
+              user={currentUser}
+              users={users}
+              authoredCount={authoredCount}
+              onUpdate={(patch) => onUpdateUser(currentUser.id, patch)}
+            />
+          )}
+
           <Section label="Theme">
             <Row label="Mode">
               <Seg<'paper' | 'ink' | 'mono'>
@@ -217,6 +238,154 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
       onClick={() => onChange(!value)}
       aria-pressed={value}
     />
+  );
+}
+
+function IdentitySection({
+  user,
+  users,
+  authoredCount,
+  onUpdate,
+}: {
+  user: User;
+  users: User[];
+  authoredCount: number;
+  onUpdate: (patch: Partial<User>) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [pickingColor, setPickingColor] = useState(false);
+  const [name, setName] = useState(user.name);
+  const [initials, setInitials] = useState(user.initials);
+  const [touchedInitials, setTouchedInitials] = useState(false);
+
+  useEffect(() => {
+    setName(user.name);
+    setInitials(user.initials);
+    setTouchedInitials(false);
+  }, [user.id, user.name, user.initials]);
+
+  useEffect(() => {
+    if (!touchedInitials) setInitials(deriveInitials(name));
+  }, [name, touchedInitials]);
+
+  const usedByOthers = new Map<string, string>();
+  for (const u of users) {
+    if (u.id !== user.id) usedByOthers.set(u.color, u.name);
+  }
+
+  const save = () => {
+    const trimmed = name.trim() || user.name;
+    const trimmedInitials = (initials.trim() || deriveInitials(trimmed)).slice(0, 3);
+    onUpdate({ name: trimmed, initials: trimmedInitials });
+    setEditing(false);
+  };
+
+  return (
+    <div className="q-drawer-sect">
+      <div className="q-drawer-sect-h">Identity</div>
+      <div className="q-id-card">
+        <AuthorChip user={user} size="md" />
+        <div className="q-id-card-meta">
+          <div className="q-id-name">{user.name}</div>
+          <div className="q-id-sub">
+            Joined{' '}
+            {user.joined
+              ? new Date(user.joined).toLocaleDateString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                })
+              : 'unknown'}{' '}
+            · {authoredCount} {authoredCount === 1 ? 'leaf' : 'leaves'} authored
+          </div>
+        </div>
+      </div>
+
+      {editing ? (
+        <div className="q-id-edit">
+          <div className="q-id-edit-row">
+            <input
+              type="text"
+              maxLength={40}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Name"
+            />
+            <input
+              type="text"
+              maxLength={3}
+              className="q-id-initials"
+              value={initials}
+              onChange={(e) => {
+                setInitials(e.target.value);
+                setTouchedInitials(true);
+              }}
+              placeholder="Initials"
+            />
+          </div>
+          <div className="q-id-edit-row">
+            <button className="q-drawer-btn" onClick={save}>
+              <Icon name="check" size={11} /> Save
+            </button>
+            <button
+              className="q-drawer-btn"
+              onClick={() => {
+                setName(user.name);
+                setInitials(user.initials);
+                setTouchedInitials(false);
+                setEditing(false);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button className="q-drawer-btn" onClick={() => setEditing(true)}>
+          <Icon name="edit" size={11} /> Edit name & initials
+        </button>
+      )}
+
+      {pickingColor ? (
+        <div>
+          <div className="q-id-color-row">
+            {USER_COLORS.map((c) => {
+              const usedBy = usedByOthers.get(c);
+              return (
+                <button
+                  key={c}
+                  className={
+                    'q-id-color' +
+                    (user.color === c ? ' on' : '') +
+                    (usedBy ? ' q-id-color-used' : '')
+                  }
+                  style={{ background: c }}
+                  title={usedBy ? `(used by ${usedBy})` : ''}
+                  onClick={() => onUpdate({ color: c })}
+                />
+              );
+            })}
+          </div>
+          <div className="q-id-color-note">
+            {(() => {
+              const usedBy = usedByOthers.get(user.color);
+              return usedBy ? `Color also used by ${usedBy}.` : '';
+            })()}
+          </div>
+          <button className="q-drawer-btn" onClick={() => setPickingColor(false)}>
+            Done
+          </button>
+        </div>
+      ) : (
+        <button className="q-drawer-btn" onClick={() => setPickingColor(true)}>
+          <Icon name="dot" size={11} /> Change color
+        </button>
+      )}
+
+      <div className="q-drawer-info">
+        Your identity is remembered by this browser only. If you open this file on another
+        device, you'll be asked to identify yourself there too.
+      </div>
+    </div>
   );
 }
 

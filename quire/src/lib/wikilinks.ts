@@ -29,7 +29,7 @@ export function buildIndex(leaves: Leaf[]): WikiIndex {
         const rx = new RegExp('([^.\n]*\\[\\[' + escaped + '\\]\\][^.\n]*)', 'i');
         const m = l.body.match(rx);
         const snippet = (m ? m[1] : '').trim().replace(/\s+/g, ' ').slice(0, 120);
-        back.get(tgt.id)!.push({ id: l.id, title: l.title, snippet });
+        back.get(tgt.id)!.push({ id: l.id, title: l.title, snippet, authorId: l.authorId });
       }
     }
   }

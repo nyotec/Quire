@@ -1,6 +1,6 @@
 import { ReactNode, useState } from 'react';
 import { Icon, IconName } from './Icon';
-import type { Leaf, LeafID } from '../types';
+import type { ActiveFilter, Leaf, LeafID, User, UserID } from '../types';
 import { formatRel } from '../lib/utils';
 
 interface SidebarProps {
@@ -11,11 +11,14 @@ interface SidebarProps {
   onJumpToday: () => void;
   todayId: LeafID | null;
   tags: [string, number][];
-  activeTag: string | null;
+  activeFilter: ActiveFilter;
   onTagClick: (t: string) => void;
+  onAuthorClick: (id: UserID) => void;
   recent: Leaf[];
   fileSizeText: string;
   savedText: string;
+  people: { user: User; count: number }[];
+  currentUserId: UserID | null;
 }
 
 export function Sidebar({
@@ -26,12 +29,17 @@ export function Sidebar({
   onJumpToday,
   todayId,
   tags,
-  activeTag,
+  activeFilter,
   onTagClick,
+  onAuthorClick,
   recent,
   fileSizeText,
   savedText,
+  people,
+  currentUserId,
 }: SidebarProps) {
+  const activeTag = activeFilter?.type === 'tag' ? activeFilter.value : null;
+  const activeAuthor = activeFilter?.type === 'author' ? activeFilter.value : null;
   const pinned = leaves.filter((l) => l.pinned);
   const today = new Date();
   const monthLabel = today.toLocaleDateString(undefined, { month: 'short' }).toUpperCase();
@@ -99,6 +107,25 @@ export function Sidebar({
               </button>
             ))}
           </div>
+        </SidebarSection>
+      )}
+
+      {people.length > 0 && (
+        <SidebarSection label="People" icon="dot">
+          {people.map(({ user, count }) => (
+            <button
+              key={user.id}
+              className={'q-people-row' + (activeAuthor === user.id ? ' active' : '')}
+              onClick={() => onAuthorClick(user.id)}
+            >
+              <span className="q-people-dot" style={{ background: user.color }} />
+              <span className="q-people-name">
+                {user.name}
+                {user.id === currentUserId && <span className="q-people-you">→ you</span>}
+              </span>
+              <span className="q-people-count">{count}</span>
+            </button>
+          ))}
         </SidebarSection>
       )}
 

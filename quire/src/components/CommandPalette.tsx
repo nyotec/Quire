@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Leaf, LeafID } from '../types';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import type { Leaf, LeafID, User, UserID } from '../types';
 import { Icon } from './Icon';
 import { formatRel } from '../lib/utils';
 import { makeFuse } from '../lib/search';
+import { AuthorChip } from './AuthorChip';
 
-type CmdMode = 'cmd' | 'tag' | 'body' | 'find';
+type CmdMode = 'cmd' | 'tag' | 'body' | 'find' | 'author';
 
 interface CmdResult {
   id: string;
-  label: string;
-  hint: string;
+  label: ReactNode;
+  hint: ReactNode;
   run: () => void;
 }
 
@@ -28,9 +29,11 @@ interface PaletteProps {
   setQuery: (q: string) => void;
   onClose: () => void;
   leaves: Leaf[];
+  users: User[];
   onOpenLeaf: (id: LeafID) => void;
   onNew: (title?: string) => void;
   onCommand: (cmd: PaletteCommand) => void;
+  onAuthorFilter: (id: UserID) => void;
 }
 
 export function CommandPalette({
@@ -39,9 +42,11 @@ export function CommandPalette({
   setQuery,
   onClose,
   leaves,
+  users,
   onOpenLeaf,
   onNew,
   onCommand,
+  onAuthorFilter,
 }: PaletteProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [sel, setSel] = useState(0);
@@ -59,12 +64,21 @@ export function CommandPalette({
     ? 'cmd'
     : query.startsWith('#')
       ? 'tag'
-      : query.startsWith('/')
-        ? 'body'
-        : 'find';
+      : query.startsWith('@')
+        ? 'author'
+        : query.startsWith('/')
+          ? 'body'
+          : 'find';
+
+  const userById = useMemo(() => new Map(users.map((u) => [u.id, u] as const)), [users]);
+  const userCounts = useMemo(() => {
+    const m = new Map<UserID, number>();
+    for (const l of leaves) m.set(l.authorId, (m.get(l.authorId) || 0) + 1);
+    return m;
+  }, [leaves]);
 
   const results: CmdResult[] = useMemo(() => {
-    const q = query.replace(/^[>#/]/, '').trim().toLowerCase();
+    const q = query.replace(/^[>#@/]/, '').trim().toLowerCase();
     if (mode === 'cmd') {
       const cmds: CmdResult[] = [
         { id: 'cmd:new', label: 'New leaf', hint: '⌘N', run: () => onNew() },
@@ -79,7 +93,9 @@ export function CommandPalette({
         { id: 'cmd:export-md', label: 'Export markdown ZIP', hint: 'download', run: () => onCommand({ kind: 'export-md' }) },
         { id: 'cmd:export-json', label: 'Export JSON', hint: 'download', run: () => onCommand({ kind: 'export-json' }) },
       ];
-      return cmds.filter((c) => !q || c.label.toLowerCase().includes(q));
+      return cmds.filter(
+        (c) => !q || (typeof c.label === 'string' && c.label.toLowerCase().includes(q)),
+      );
     }
     if (mode === 'tag') {
       return leaves
@@ -92,6 +108,36 @@ export function CommandPalette({
             .filter((t) => t.toLowerCase().includes(q))
             .map((t) => '#' + t)
             .join(' '),
+          run: () => onOpenLeaf(l.id),
+        }));
+    }
+    if (mode === 'author') {
+      // Empty query: list users with leaf counts
+      if (!q) {
+        return users
+          .slice()
+          .sort((a, b) => (userCounts.get(b.id) || 0) - (userCounts.get(a.id) || 0))
+          .map<CmdResult>((u) => ({
+            id: 'user:' + u.id,
+            label: (
+              <span>
+                <AuthorChip user={u} /> <span style={{ marginLeft: 6 }}>{u.name}</span>
+              </span>
+            ),
+            hint: `${userCounts.get(u.id) || 0} leaves`,
+            run: () => onAuthorFilter(u.id),
+          }));
+      }
+      // Match users by name, then list their leaves.
+      const matched = users.filter((u) => u.name.toLowerCase().includes(q));
+      const matchedIds = new Set(matched.map((u) => u.id));
+      return leaves
+        .filter((l) => matchedIds.has(l.authorId))
+        .slice(0, 16)
+        .map<CmdResult>((l) => ({
+          id: l.id,
+          label: l.title,
+          hint: <AuthorChip user={userById.get(l.authorId) || null} />,
           run: () => onOpenLeaf(l.id),
         }));
     }
@@ -144,7 +190,7 @@ export function CommandPalette({
         results[sel].run();
         onClose();
       } else if (query.trim()) {
-        onNew(query.replace(/^[>#/]/, '').trim());
+        onNew(query.replace(/^[>#@/]/, '').trim());
         onClose();
       }
     } else if (e.key === 'Escape') {
@@ -156,14 +202,24 @@ export function CommandPalette({
     <div className="q-palette-scrim" onClick={onClose}>
       <div className="q-palette" onClick={(e) => e.stopPropagation()}>
         <div className="q-palette-row">
-          <Icon name={mode === 'cmd' ? 'cmd' : mode === 'tag' ? 'tag' : 'search'} />
+          <Icon
+            name={
+              mode === 'cmd'
+                ? 'cmd'
+                : mode === 'tag'
+                  ? 'tag'
+                  : mode === 'author'
+                    ? 'dot'
+                    : 'search'
+            }
+          />
           <input
             ref={inputRef}
             className="q-palette-input"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKey}
-            placeholder="Type to find · > command · # tag · / search bodies"
+            placeholder="Type to find · > command · # tag · @ author · / search bodies"
           />
           <span className="q-palette-mode">{mode}</span>
         </div>
@@ -187,7 +243,7 @@ export function CommandPalette({
               <span>No matches.</span>
               <kbd>Enter</kbd>
               <span>
-                to create "<b>{query.replace(/^[>#/]/, '').trim() || 'Untitled'}</b>"
+                to create "<b>{query.replace(/^[>#@/]/, '').trim() || 'Untitled'}</b>"
               </span>
             </div>
           )}

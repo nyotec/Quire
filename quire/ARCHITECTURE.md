@@ -55,11 +55,20 @@ src/
 1. **Read embedded data** — `persistence.loadFromHTML()` parses
    `<script id="quire-data" type="application/json">`. If empty/missing, we
    seed with a fresh wikiId and a single welcome leaf.
-2. **Open IndexedDB** (`db: quire`, stores: `drafts`, `handles`, `meta`).
-3. **Look up draft** at `draft:{wikiId}`. If `draft.lastSaved > embedded.lastSaved`,
+2. **Schema-migrate** — `migrateToV2()` upgrades any v1 (or unversioned) state
+   in place. It synthesises a *Legacy author* user, sets every existing leaf's
+   `authorId`/`lastEditedBy`/`contributors` to `legacy`, and bumps
+   `schemaVersion` to 2.
+3. **Open IndexedDB** (`db: quire` v2, stores: `drafts`, `handles`, `meta`,
+   `identity`).
+4. **Look up draft** at `draft:{wikiId}`. If `draft.lastSaved > embedded.lastSaved`,
    show the *Unsaved changes found — Restore?* modal. The user picks one.
-4. **Hydrate the Zustand store** with the chosen state.
-5. **Detect tier** (A/B/C):
+5. **Resolve identity** — read `identity:{wikiId}` from IndexedDB. If found and
+   the userId still exists in `state.users[]`, use it as `currentUserId`.
+   Otherwise mark `needsIdentity = true` so the User Onboarding Modal shows
+   on first paint.
+6. **Hydrate the Zustand store** with the chosen state and `currentUserId`.
+7. **Detect tier** (A/B/C):
    - A — `'showSaveFilePicker' in window` → silent auto-save once the user
      connects a file.
    - B — File System Access API absent → IndexedDB auto-save + manual `⌘S`
@@ -136,7 +145,12 @@ inserting the JSON we replace `</` with `<\/` so any user-authored
 |---|---|---|
 | `drafts` | `draft:{wikiId}` | `{ state: WikiState, lastSaved: ISO }` |
 | `handles` | `fileHandle:{wikiId}` | `FileSystemFileHandle` (structured-cloned) |
+| `identity` | `identity:{wikiId}` | `{ wikiId, currentUserId }` |
 | `meta` | (reserved for future) | — |
+
+The IDB schema version is **2**. The upgrade path creates `drafts`/`handles`/`meta`
+on first install (or `oldVersion < 1`) and adds `identity` on `oldVersion < 2`.
+Existing data in `drafts`/`handles` is preserved across the upgrade.
 
 Handles are **structured-clonable** in modern Chromium — they serialize into
 IndexedDB directly. We never `JSON.stringify` them.
@@ -147,6 +161,29 @@ Each tab opens `BroadcastChannel('quire:{wikiId}')` on boot. After a successful
 write, the writing tab posts `{ type: 'updated' }`; receiving tabs surface a
 "This file was updated in another tab — Reload" toast. Reloading re-reads the
 embedded block, which is now the most recent saved state.
+
+When a user updates their own profile (name/initials/color), the channel also
+posts `{ type: 'userUpdated', userId }` so other tabs can refresh affected
+chips without a full reload.
+
+## User identity (v1.1)
+
+`WikiState` carries a `users: User[]` registry. Each `User` has a stable
+`id` (uuid), display `name`, derived `initials`, a `color` from an 8-entry
+palette, plus `joined`/`lastSeen` timestamps. Every `Leaf` has `authorId`
+(creator), `lastEditedBy` (most recent saver), and `contributors` (everyone
+who has ever touched the leaf).
+
+`currentUserId` lives in IndexedDB only — never in `WikiState`. This is the key
+design decision: the wiki state (which gets serialised into the HTML and shared)
+contains the registry of *all* users, but not "who is using this browser." When
+the file moves to a new device, that device's user identifies themselves; the
+existing `users` registry is appended to, never overwritten.
+
+Every leaf mutation runs through `touchLeaf(leaf, currentUserId)`, which
+updates `lastEditedBy`, appends to `contributors` if absent, and bumps
+`edited`. New leaves seed `authorId = lastEditedBy = currentUserId` and
+`contributors = [currentUserId]`.
 
 ## Why no `localStorage`
 
