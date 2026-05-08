@@ -178,6 +178,26 @@ export class WikiPersistence {
     }
   }
 
+  // ─── meta store (one-shot UI flags) ───────────────────────────────────
+  async getMeta<T = unknown>(key: string): Promise<T | null> {
+    try {
+      const db = await this.db();
+      const v = await db.get(STORE_META, key);
+      return (v as T) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async setMeta<T>(key: string, value: T): Promise<void> {
+    try {
+      const db = await this.db();
+      await db.put(STORE_META, value as any, key);
+    } catch {
+      // ignore
+    }
+  }
+
   // ─── tier A — file handle ─────────────────────────────────────────────
   async hasStoredHandle(wikiId: string): Promise<boolean> {
     if (this.status.tier !== 'A') return false;

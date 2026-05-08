@@ -5,6 +5,7 @@ import { formatRel } from '../lib/utils';
 import { renderMarkdown } from '../lib/markdown';
 import { toggleTaskOnLine } from '../lib/tasks';
 import { AuthorChip, AuthorChipPair } from './AuthorChip';
+import { useShortcuts } from '../lib/hotkeys';
 
 interface LeafCardProps {
   leaf: Leaf;
@@ -66,6 +67,21 @@ export function LeafCard({
     },
     [leaf, onChange],
   );
+
+  // While editing this leaf, capture Esc and ⌘Return to exit edit mode.
+  useShortcuts((action) => {
+    if (!editing) return false;
+    if (action === 'esc' || action === 'leaf.toggleEdit') {
+      onToggleEdit();
+      // Return focus to the leaf so the editor textarea no longer holds focus.
+      const el = document.querySelector(
+        `[data-leaf-id="${leaf.id}"]`,
+      ) as HTMLElement | null;
+      el?.focus();
+      return true;
+    }
+    return false;
+  });
 
   const ctx = useMemo(
     () => ({

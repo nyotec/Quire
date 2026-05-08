@@ -6,6 +6,7 @@ import { makeFuse } from '../lib/search';
 import { AuthorChip } from './AuthorChip';
 import { allTasks, sortTasks } from '../lib/tasks';
 import { DueChip } from './DueChip';
+import { useShortcuts } from '../lib/hotkeys';
 
 type CmdMode = 'cmd' | 'tag' | 'body' | 'find' | 'author' | 'task';
 
@@ -62,6 +63,20 @@ export function CommandPalette({
       setTimeout(() => inputRef.current?.focus(), 10);
     }
   }, [open]);
+
+  useShortcuts((action) => {
+    if (!open) return false;
+    if (action === 'esc') {
+      onClose();
+      return true;
+    }
+    if (action === 'palette.open') {
+      // ⌘K toggles closed when palette is already open
+      onClose();
+      return true;
+    }
+    return false;
+  });
 
   const mode: CmdMode = query.startsWith('>')
     ? 'cmd'

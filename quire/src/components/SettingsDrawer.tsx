@@ -5,6 +5,7 @@ import { formatRel } from '../lib/utils';
 import { AuthorChip } from './AuthorChip';
 import { USER_COLORS } from '../lib/userColors';
 import { deriveInitials } from '../lib/users';
+import { useShortcuts } from '../lib/hotkeys';
 
 const ACCENT_HEX: Record<AccentName, string> = {
   ochre: '#b8862e',
@@ -33,6 +34,7 @@ interface DrawerProps {
   users: User[];
   authoredCount: number;
   onUpdateUser: (userId: UserID, patch: Partial<User>) => void;
+  onShowShortcuts: () => void;
 }
 
 export function SettingsDrawer({
@@ -54,7 +56,16 @@ export function SettingsDrawer({
   users,
   authoredCount,
   onUpdateUser,
+  onShowShortcuts,
 }: DrawerProps) {
+  useShortcuts((action) => {
+    if (!open) return false;
+    if (action === 'esc') {
+      onClose();
+      return true;
+    }
+    return false;
+  });
   if (!open) return null;
   return (
     <>
@@ -204,8 +215,15 @@ export function SettingsDrawer({
             ))}
           </Section>
 
+          <Section label="Keyboard shortcuts">
+            <div className="q-drawer-info">All shortcuts are listed in the help dialog.</div>
+            <button className="q-drawer-btn" onClick={onShowShortcuts}>
+              <Icon name="cmd" size={11} /> Show shortcuts
+            </button>
+          </Section>
+
           <Section label="About">
-            <div className="q-drawer-info">Quire v1.0 — single-file notebook</div>
+            <div className="q-drawer-info">Quire v1.2.1 — single-file notebook</div>
             <div className="q-drawer-info">
               All your data lives inside this HTML file. Email it, drop it on a USB, or open it
               from a folder — it just works.

@@ -102,19 +102,28 @@ The Settings drawer has a *Tasks* section: toggle the sidebar overdue badge, and
 
 ## Keyboard shortcuts
 
+The shortcut scheme is deliberately chosen to **avoid browser-reserved keys** like
+`⌘N`, `⌘W`, `⌘T`, and `⌘[`/`⌘]` that the browser intercepts before the page sees them.
+Press `?` at any time to open the in-app shortcut help.
+
 | Shortcut | Action |
 |---|---|
-| `⌘K` / `Ctrl+K` | Command palette |
-| `⌘N` / `Ctrl+N` | New leaf |
-| `⌘E` / `Ctrl+E` | Toggle edit mode on the focused leaf |
-| `⌘W` / `Ctrl+W` | Close focused leaf |
-| `⌘[` / `⌘]` | Move focused leaf left / right |
+| `⌘K` / `Ctrl+K` | Command palette (works inside the editor too) |
+| `⌘J` / `Ctrl+J` | New leaf |
+| `⌘Return` / `Ctrl+Enter` | Toggle edit mode on focused leaf |
+| `⌘⌫` / `Ctrl+Backspace` | Close focused leaf |
+| `⌘⇧[` / `Ctrl+Shift+[` | Move focused leaf left |
+| `⌘⇧]` / `Ctrl+Shift+]` | Move focused leaf right |
+| `Tab` / `Shift+Tab` | Focus next / previous open leaf |
 | `⌘S` / `Ctrl+S` | Save Wiki |
 | `⌘,` / `Ctrl+,` | Open settings |
-| `⌘⇧T` / `Ctrl+Shift+T` | Toggle Tasks view |
-| `Esc` | Close palette / settings |
+| `⌘⇧K` / `Ctrl+Shift+K` | Toggle Tasks view |
+| `?` | Show keyboard shortcuts |
+| `Esc` | Close palette / drawer / dialog |
 
 Inside the palette: `>` for commands, `#` for tags, `@` for authors, `!` for tasks, `/` for full-text body search.
+
+**Troubleshooting**: if shortcuts don't work, check for browser extensions that intercept keyboard input (Vimium, Vimari, etc.) — disable them on `file://` URLs.
 
 ## Extending
 
