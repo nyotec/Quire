@@ -29,6 +29,12 @@ export type AccentName = 'ochre' | 'sage' | 'indigo' | 'rust' | 'plum';
 export type FontPair = 'editorial' | 'modern' | 'classic' | 'terminal';
 export type Density = 'compact' | 'regular' | 'comfy';
 export type LayoutName = 'river' | 'stack';
+export type DateFormat = 'relative' | 'absolute' | 'both';
+
+export interface TaskSettings {
+  showOverdueBadge: boolean;
+  dateFormat: DateFormat;
+}
 
 export interface Settings {
   theme: ThemeName;
@@ -40,6 +46,7 @@ export interface Settings {
   backlinks: boolean;
   spineNumbers: boolean;
   plugins: Record<string, boolean>;
+  tasks: TaskSettings;
 }
 
 export interface WikiState {
@@ -93,5 +100,9 @@ export const DEFAULT_SETTINGS: Settings = {
     code: true,
     wordcount: false,
     darkjournal: false,
+  },
+  tasks: {
+    showOverdueBadge: true,
+    dateFormat: 'relative',
   },
 };

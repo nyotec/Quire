@@ -1,7 +1,14 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useMemo, useState } from 'react';
 import { Icon, IconName } from './Icon';
 import type { ActiveFilter, Leaf, LeafID, User, UserID } from '../types';
 import { formatRel } from '../lib/utils';
+import {
+  TaskCounts,
+  TaskInfo,
+  allTasks,
+  computeCounts,
+  sortTasks,
+} from '../lib/tasks';
 
 interface SidebarProps {
   leaves: Leaf[];
@@ -19,6 +26,8 @@ interface SidebarProps {
   savedText: string;
   people: { user: User; count: number }[];
   currentUserId: UserID | null;
+  onOpenTasks: () => void;
+  showOverdueBadge: boolean;
 }
 
 export function Sidebar({
@@ -37,10 +46,26 @@ export function Sidebar({
   savedText,
   people,
   currentUserId,
+  onOpenTasks,
+  showOverdueBadge,
 }: SidebarProps) {
   const activeTag = activeFilter?.type === 'tag' ? activeFilter.value : null;
   const activeAuthor = activeFilter?.type === 'author' ? activeFilter.value : null;
   const pinned = leaves.filter((l) => l.pinned);
+  const tasks = useMemo(() => allTasks(leaves), [leaves]);
+  const taskCounts: TaskCounts = useMemo(() => computeCounts(tasks), [tasks]);
+  const upcoming = useMemo(() => {
+    const open = tasks.filter(
+      (t) => !t.done && t.dueDate,
+    );
+    return sortTasks(open, 'due')
+      .filter((t) => {
+        // Only show due-today and overdue items in the mini list.
+        const today = new Date().toISOString().slice(0, 10);
+        return t.dueDate && t.dueDate <= today;
+      })
+      .slice(0, 5);
+  }, [tasks]);
   const today = new Date();
   const monthLabel = today.toLocaleDateString(undefined, { month: 'short' }).toUpperCase();
   const dayLabel = String(today.getDate());
@@ -49,6 +74,22 @@ export function Sidebar({
 
   return (
     <aside className="q-side">
+      <button className="q-sidebar-tasks" onClick={onOpenTasks}>
+        <div className="q-sidebar-tasks-icon">☐</div>
+        <div className="q-sidebar-tasks-meta">
+          <div className="q-sidebar-tasks-label">Tasks</div>
+          <div className="q-sidebar-tasks-sub">
+            {taskCounts.dueToday > 0
+              ? `${taskCounts.dueToday} due today · `
+              : ''}
+            {taskCounts.open} open
+          </div>
+        </div>
+        {showOverdueBadge && taskCounts.overdue > 0 && (
+          <span className="q-sidebar-tasks-badge">{taskCounts.overdue}</span>
+        )}
+      </button>
+
       <button className="q-today" onClick={onJumpToday} disabled={!todayId}>
         <div className="q-today-date">
           <div className="q-today-mo">{monthLabel}</div>
@@ -124,6 +165,32 @@ export function Sidebar({
                 {user.id === currentUserId && <span className="q-people-you">→ you</span>}
               </span>
               <span className="q-people-count">{count}</span>
+            </button>
+          ))}
+        </SidebarSection>
+      )}
+
+      {upcoming.length > 0 && (
+        <SidebarSection label="Upcoming" icon="check">
+          {upcoming.map((t) => (
+            <button
+              key={`${t.leafId}:${t.sourceLine}`}
+              className="q-upcoming-row"
+              onClick={() => onOpen(t.leafId)}
+              title={t.text}
+            >
+              <span className="q-upcoming-text">{t.text || '(empty)'}</span>
+              <span
+                className={
+                  'q-due ' +
+                  (t.dueDate && t.dueDate < new Date().toISOString().slice(0, 10)
+                    ? 'q-due-overdue'
+                    : 'q-due-today')
+                }
+              >
+                {t.dueDate &&
+                  (t.dueDate < new Date().toISOString().slice(0, 10) ? 'overdue' : 'today')}
+              </span>
             </button>
           ))}
         </SidebarSection>

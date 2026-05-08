@@ -11,6 +11,7 @@ import { ToastStack } from './components/Toast';
 import { Icon } from './components/Icon';
 import { UserOnboardingModal } from './components/UserOnboardingModal';
 import { AuthorChip } from './components/AuthorChip';
+import { TasksView } from './components/TasksView';
 import { buildIndex, tagCounts } from './lib/wikilinks';
 import { formatBytes, formatRel, uuid } from './lib/utils';
 import { useGlobalHotkeys } from './lib/hotkeys';
@@ -65,6 +66,7 @@ const THEMES: Record<ThemeName, Record<string, string>> = {
     '--q-shadow-focused':
       '0 1px 0 rgba(255,255,255,.7) inset, 0 2px 4px rgba(60,40,10,.08), 0 24px 50px -22px rgba(60,40,10,.28)',
     '--q-paper-grain': '0',
+    '--q-overdue': 'oklch(0.55 0.16 25)',
   },
   ink: {
     '--q-bg': '#14130f',
@@ -80,6 +82,7 @@ const THEMES: Record<ThemeName, Record<string, string>> = {
     '--q-shadow-focused':
       '0 1px 0 rgba(255,255,255,.06) inset, 0 24px 50px -22px rgba(0,0,0,.8)',
     '--q-paper-grain': '0',
+    '--q-overdue': 'oklch(0.65 0.16 25)',
   },
   mono: {
     '--q-bg': '#ffffff',
@@ -94,6 +97,7 @@ const THEMES: Record<ThemeName, Record<string, string>> = {
     '--q-shadow': 'none',
     '--q-shadow-focused': '0 0 0 1.5px #0b0b0b',
     '--q-paper-grain': '0',
+    '--q-overdue': '#0b0b0b',
   },
 };
 
@@ -131,6 +135,8 @@ export default function App() {
   const [hasFileHandle, setHasFileHandle] = useState(false);
   const [originalFilename] = useState<string>('quire.html');
   const [fileSize, setFileSize] = useState<number>(0);
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const [tasksFocused, setTasksFocused] = useState(false);
 
   // ─── boot sequence ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -425,6 +431,10 @@ export default function App() {
         case 'settings':
           store.setSettingsOpen(true);
           break;
+        case 'tasks':
+          setTasksOpen(true);
+          setTasksFocused(true);
+          break;
       }
     },
     [doManualSave, store],
@@ -460,12 +470,19 @@ export default function App() {
         } else if (meta && e.key === ',') {
           e.preventDefault();
           store.setSettingsOpen(true);
+        } else if (meta && e.shiftKey && e.key.toLowerCase() === 't') {
+          e.preventDefault();
+          setTasksOpen((prev) => {
+            const next = !prev;
+            if (next) setTasksFocused(true);
+            return next;
+          });
         } else if (e.key === 'Escape') {
           if (paletteOpen) store.setPaletteOpen(false);
           if (settingsOpen) store.setSettingsOpen(false);
         }
       },
-      [focusedId, editingId, paletteOpen, settingsOpen, store, doManualSave],
+      [focusedId, editingId, paletteOpen, settingsOpen, store, doManualSave, tasksOpen],
     ),
   );
 
@@ -598,6 +615,11 @@ export default function App() {
             savedText={savedText}
             people={people}
             currentUserId={currentUserId}
+            onOpenTasks={() => {
+              setTasksOpen(true);
+              setTasksFocused(true);
+            }}
+            showOverdueBadge={settings.tasks.showOverdueBadge}
           />
         )}
 
@@ -627,7 +649,27 @@ export default function App() {
           )}
 
           <div className={`q-river q-river-${settings.layout}`}>
-            {openLeavesArr.length === 0 && (
+            {tasksOpen && (
+              <TasksView
+                focused={tasksFocused}
+                leafIndex={0}
+                onClose={() => {
+                  setTasksOpen(false);
+                  setTasksFocused(false);
+                }}
+                onOpenLeaf={(id) => {
+                  setTasksFocused(false);
+                  store.openLeaf(id);
+                }}
+                onWikilink={onWikilink}
+                onTag={onTagClick}
+                exists={exists}
+                getUser={getUser}
+                dateFormat={settings.tasks.dateFormat}
+                spineNumbers={settings.spineNumbers}
+              />
+            )}
+            {openLeavesArr.length === 0 && !tasksOpen && (
               <div className="q-empty">
                 <div className="q-empty-mark" />
                 <h3>
@@ -652,7 +694,10 @@ export default function App() {
                 spineNumbers={settings.spineNumbers}
                 backlinks={index.back.get(leaf.id) || []}
                 exists={exists}
-                onFocus={() => store.setFocused(leaf.id)}
+                onFocus={() => {
+                  store.setFocused(leaf.id);
+                  setTasksFocused(false);
+                }}
                 onClose={() => store.closeLeaf(leaf.id)}
                 onWikilink={onWikilink}
                 onTag={onTagClick}
@@ -663,6 +708,7 @@ export default function App() {
                   store.setEditing(editingId === leaf.id ? null : leaf.id)
                 }
                 onTogglePin={() => store.togglePin(leaf.id)}
+                dateFormat={settings.tasks.dateFormat}
                 dragHandlers={dragHandlers(leaf.id)}
               />
             ))}

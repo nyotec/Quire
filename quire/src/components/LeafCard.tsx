@@ -1,8 +1,9 @@
-import { useMemo, DragEvent } from 'react';
-import type { Leaf, BacklinkRef, User, UserID } from '../types';
+import { useCallback, useMemo, DragEvent } from 'react';
+import type { Leaf, BacklinkRef, DateFormat, User, UserID } from '../types';
 import { Icon } from './Icon';
 import { formatRel } from '../lib/utils';
 import { renderMarkdown } from '../lib/markdown';
+import { toggleTaskOnLine } from '../lib/tasks';
 import { AuthorChip, AuthorChipPair } from './AuthorChip';
 
 interface LeafCardProps {
@@ -24,6 +25,7 @@ interface LeafCardProps {
   onToggleEdit: () => void;
   onTogglePin: () => void;
   getUser: (id: UserID | null | undefined) => User | null;
+  dateFormat?: DateFormat;
   dragHandlers: {
     draggable: boolean;
     onDragStart: (e: DragEvent) => void;
@@ -52,11 +54,29 @@ export function LeafCard({
   onToggleEdit,
   onTogglePin,
   getUser,
+  dateFormat,
   dragHandlers,
 }: LeafCardProps) {
+  const onTaskToggle = useCallback(
+    (line: number) => {
+      const next = toggleTaskOnLine(leaf.body, line);
+      if (next !== null) {
+        onChange({ ...leaf, body: next });
+      }
+    },
+    [leaf, onChange],
+  );
+
   const ctx = useMemo(
-    () => ({ exists, onWikilink, onTag }),
-    [exists, onWikilink, onTag],
+    () => ({
+      exists,
+      onWikilink,
+      onTag,
+      // Only attach the toggle handler in render mode (textarea owns edit clicks).
+      onTaskToggle: editing ? undefined : onTaskToggle,
+      dateFormat,
+    }),
+    [exists, onWikilink, onTag, editing, onTaskToggle, dateFormat],
   );
 
   const author = getUser(leaf.authorId);
