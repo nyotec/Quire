@@ -67,6 +67,28 @@ IndexedDB on `file://` URLs is scoped per file path on most browsers. **Moving
 Drafts and the connected file handle are bound to the original location. If you
 move the file, reconnect via Settings → Storage → *Connect file*.
 
+## Multi-user attribution (v1.1)
+
+Quire supports lightweight multi-user attribution for shared files. **It is not real-time
+collaboration** — there is no server, no merging, no live sync. It is annotation +
+turn-taking: while one person edits, the others wait.
+
+- The first time a browser opens a Quire file, it asks for your name and initials.
+- Every leaf records its **author** (creator) and **last editor**, plus the full list of
+  **contributors**.
+- Coloured initials chips render in the leaf header, the backlinks footer, and a new
+  **People** section in the sidebar.
+- The command palette has an `@` mode for finding leaves by author.
+- The Settings drawer's Identity section lets you change your name, initials, or color.
+
+The `users` registry travels inside the HTML file. Your `currentUserId` lives only in
+that browser's IndexedDB — opening the same file on a new device prompts that device's
+user to identify themselves. See ARCHITECTURE.md for the load sequence.
+
+A v1 file (no `users` registry) auto-upgrades on load: every existing leaf is
+re-attributed to a synthetic *Legacy author* (`··` chip) so it's visually clear which
+content predates the multi-user feature.
+
 ## Keyboard shortcuts
 
 | Shortcut | Action |
@@ -80,7 +102,7 @@ move the file, reconnect via Settings → Storage → *Connect file*.
 | `⌘,` / `Ctrl+,` | Open settings |
 | `Esc` | Close palette / settings |
 
-Inside the palette: `>` for commands, `#` for tags, `/` for full-text body search.
+Inside the palette: `>` for commands, `#` for tags, `@` for authors, `/` for full-text body search.
 
 ## Extending
 

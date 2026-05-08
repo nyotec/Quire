@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, DragEvent } from 'react';
-import { useWikiStore } from './store/useWikiStore';
+import { useCurrentUser, useWikiStore } from './store/useWikiStore';
 import { persistence } from './store/persistence';
 import { welcomeLeaf } from './seed/welcome';
 import { TopBar } from './components/TopBar';
@@ -9,10 +9,13 @@ import { CommandPalette, PaletteCommand } from './components/CommandPalette';
 import { SettingsDrawer } from './components/SettingsDrawer';
 import { ToastStack } from './components/Toast';
 import { Icon } from './components/Icon';
+import { UserOnboardingModal } from './components/UserOnboardingModal';
+import { AuthorChip } from './components/AuthorChip';
 import { buildIndex, tagCounts } from './lib/wikilinks';
 import { formatBytes, formatRel, uuid } from './lib/utils';
 import { useGlobalHotkeys } from './lib/hotkeys';
-import type { AccentName, FontPair, ThemeName } from './types';
+import { findUser, leafCountsByAuthor, makeUser, migrateToV2 } from './lib/users';
+import type { AccentName, ActiveFilter, FontPair, ThemeName, UserID, WikiState } from './types';
 import { DEFAULT_SETTINGS } from './types';
 
 const ACCENTS: Record<AccentName, string> = {
@@ -108,7 +111,9 @@ export default function App() {
     openIds,
     focusedId,
     settings,
-    activeTag,
+    users,
+    currentUserId,
+    activeFilter,
     paletteOpen,
     paletteQuery,
     editingId,
@@ -117,7 +122,9 @@ export default function App() {
     onboardingDismissed,
     saveStatus,
     remoteUpdateAvailable,
+    needsIdentity,
   } = store;
+  const currentUser = useCurrentUser();
 
   const [hydrated, setHydrated] = useState(false);
   const [restore, setRestore] = useState<RestorePromptState | null>(null);
@@ -131,24 +138,33 @@ export default function App() {
     (async () => {
       const tier = persistence.detectTier();
       const fromHTML = persistence.loadFromHTML();
-      let baseState =
-        fromHTML ?? {
-          schemaVersion: 1 as const,
+      let baseState: WikiState =
+        fromHTML ??
+        migrateToV2({
+          schemaVersion: 1,
           wikiId: uuid(),
           leaves: [welcomeLeaf()],
           openIds: ['welcome'],
           focusedId: 'welcome',
           settings: DEFAULT_SETTINGS,
           lastSaved: new Date().toISOString(),
-        };
+        });
 
       const draft = await persistence.loadDraftFromIDB(baseState.wikiId);
       const useDraft =
         draft && draft.lastSaved && baseState.lastSaved && draft.lastSaved > baseState.lastSaved;
 
-      const finish = (chosen: typeof baseState) => {
+      const finish = async (chosen: WikiState) => {
         if (cancelled) return;
-        store.hydrate(chosen);
+        // Resolve current user identity for this browser.
+        let savedId = await persistence.getCurrentUserId(chosen.wikiId);
+        const userExists =
+          savedId && chosen.users && chosen.users.some((u) => u.id === savedId);
+        if (!userExists) savedId = null;
+        store.hydrate(chosen, savedId);
+        if (!savedId) {
+          useWikiStore.getState().setNeedsIdentity(true);
+        }
         setHydrated(true);
       };
 
@@ -178,6 +194,11 @@ export default function App() {
           message: 'This file was updated in another tab. Reload to see latest.',
           ttl: 8000,
         });
+      };
+      persistence.onRemoteUserUpdate = () => {
+        // Trigger a soft re-read by reloading state; in practice another tab's
+        // user update lands via the file save → the broadcast above already
+        // covers reload prompts. This handler exists to support future extensions.
       };
 
       // Tier A: verify handle
@@ -256,8 +277,31 @@ export default function App() {
     [leaves],
   );
   const todayId = useMemo(() => leaves.find((l) => l.isJournal)?.id ?? null, [leaves]);
+  const people = useMemo(() => leafCountsByAuthor(leaves, users), [leaves, users]);
+  const getUser = useCallback(
+    (id: UserID | null | undefined) => findUser(users, id || null),
+    [users],
+  );
+  const authoredCount = useMemo(
+    () =>
+      currentUser ? leaves.filter((l) => l.authorId === currentUser.id).length : 0,
+    [leaves, currentUser],
+  );
+
   let openLeavesArr = openIds.map((id) => index.byId.get(id)).filter(Boolean) as typeof leaves;
-  if (activeTag) openLeavesArr = openLeavesArr.filter((l) => l.tags.includes(activeTag));
+  if (activeFilter?.type === 'tag') {
+    openLeavesArr = openLeavesArr.filter((l) => l.tags.includes(activeFilter.value));
+  } else if (activeFilter?.type === 'author') {
+    openLeavesArr = openLeavesArr.filter((l) => l.authorId === activeFilter.value);
+  }
+  const filterTotalCount =
+    activeFilter?.type === 'tag'
+      ? leaves.filter((l) => l.tags.includes(activeFilter.value)).length
+      : activeFilter?.type === 'author'
+        ? leaves.filter((l) => l.authorId === activeFilter.value).length
+        : 0;
+  const filterAuthorUser =
+    activeFilter?.type === 'author' ? getUser(activeFilter.value) : null;
 
   // ─── handlers ─────────────────────────────────────────────────────────
   const onWikilink = useCallback(
@@ -274,9 +318,28 @@ export default function App() {
 
   const onTagClick = useCallback(
     (t: string) => {
-      store.setActiveTag(activeTag === t ? null : t);
+      const currentTag =
+        activeFilter?.type === 'tag' ? activeFilter.value : null;
+      store.setActiveFilter(currentTag === t ? null : { type: 'tag', value: t });
     },
-    [activeTag, store],
+    [activeFilter, store],
+  );
+
+  const onAuthorClick = useCallback(
+    (id: UserID) => {
+      const currentAuthor =
+        activeFilter?.type === 'author' ? activeFilter.value : null;
+      store.setActiveFilter(currentAuthor === id ? null : { type: 'author', value: id });
+    },
+    [activeFilter, store],
+  );
+
+  const onAuthorFilterFromPalette = useCallback(
+    (id: UserID) => {
+      store.setActiveFilter({ type: 'author', value: id });
+      store.setPaletteOpen(false);
+    },
+    [store],
   );
 
   const cycleTheme = () => {
@@ -507,7 +570,13 @@ export default function App() {
         }}
         sidebarOpen={settings.sidebar}
         count={leaves.length}
-        query={activeTag ? `filtered: #${activeTag}` : ''}
+        query={
+          activeFilter?.type === 'tag'
+            ? `filtered: #${activeFilter.value}`
+            : activeFilter?.type === 'author'
+              ? `filtered: @${filterAuthorUser?.name || ''}`
+              : ''
+        }
         saveStatus={saveStatus}
       />
 
@@ -521,22 +590,39 @@ export default function App() {
             onJumpToday={() => todayId && store.openLeaf(todayId)}
             todayId={todayId}
             tags={tags}
-            activeTag={activeTag}
+            activeFilter={activeFilter}
             onTagClick={onTagClick}
+            onAuthorClick={onAuthorClick}
             recent={recent}
             fileSizeText={fileSizeText}
             savedText={savedText}
+            people={people}
+            currentUserId={currentUserId}
           />
         )}
 
         <main className="q-main">
-          {activeTag && (
+          {activeFilter && (
             <div className="q-filter-bar">
-              <span>
-                Showing leaves tagged <b>#{activeTag}</b> · {openLeavesArr.length} open ·{' '}
-                {leaves.filter((l) => l.tags.includes(activeTag)).length} total
-              </span>
-              <button onClick={() => store.setActiveTag(null)}>clear filter</button>
+              {activeFilter.type === 'tag' ? (
+                <span>
+                  Showing leaves tagged <b>#{activeFilter.value}</b> · {openLeavesArr.length} open ·{' '}
+                  {filterTotalCount} total
+                </span>
+              ) : (
+                <span>
+                  {filterAuthorUser && (
+                    <AuthorChip
+                      user={filterAuthorUser}
+                      title={filterAuthorUser.name}
+                    />
+                  )}
+                  <span className="q-filter-author-chip" />
+                  Showing leaves by <b>{filterAuthorUser?.name || 'unknown'}</b> ·{' '}
+                  {openLeavesArr.length} open · {filterTotalCount} total
+                </span>
+              )}
+              <button onClick={() => store.setActiveFilter(null)}>clear filter</button>
             </div>
           )}
 
@@ -544,7 +630,11 @@ export default function App() {
             {openLeavesArr.length === 0 && (
               <div className="q-empty">
                 <div className="q-empty-mark" />
-                <h3>The river is dry.</h3>
+                <h3>
+                  {activeFilter?.type === 'author'
+                    ? `No leaves by ${filterAuthorUser?.name || 'this user'} yet.`
+                    : 'The river is dry.'}
+                </h3>
                 <p>
                   Press <kbd>⌘K</kbd> to find a leaf, or <kbd>⌘N</kbd> to write a new one.
                 </p>
@@ -566,6 +656,8 @@ export default function App() {
                 onClose={() => store.closeLeaf(leaf.id)}
                 onWikilink={onWikilink}
                 onTag={onTagClick}
+                onAuthorClick={onAuthorClick}
+                getUser={getUser}
                 onChange={(next) => store.updateLeaf(next)}
                 onToggleEdit={() =>
                   store.setEditing(editingId === leaf.id ? null : leaf.id)
@@ -585,9 +677,11 @@ export default function App() {
         setQuery={(q) => store.setPaletteQuery(q)}
         onClose={() => store.setPaletteOpen(false)}
         leaves={leaves}
+        users={users}
         onOpenLeaf={(id) => store.openLeaf(id)}
         onNew={(t) => store.newLeaf(t)}
         onCommand={onPaletteCommand}
+        onAuthorFilter={onAuthorFilterFromPalette}
       />
 
       <SettingsDrawer
@@ -611,6 +705,10 @@ export default function App() {
         lastSaved={saveStatus.lastSaved}
         tier={saveStatus.tier}
         hasFileHandle={hasFileHandle}
+        currentUser={currentUser}
+        users={users}
+        authoredCount={authoredCount}
+        onUpdateUser={(id, patch) => store.updateUser(id, patch)}
       />
 
       {showOnboarding && (
@@ -654,6 +752,21 @@ export default function App() {
           </div>
         </div>
       )}
+
+      <UserOnboardingModal
+        open={hydrated && needsIdentity}
+        onSubmit={(name, initials) => {
+          const u = makeUser(name, initials, useWikiStore.getState().users);
+          store.addUser(u);
+          store.setCurrentUser(u.id);
+          store.setNeedsIdentity(false);
+          persistence.setCurrentUserId(useWikiStore.getState().wikiId, u.id);
+          useWikiStore.getState().pushToast({
+            message: `Welcome, ${u.name}. Your notes will be marked with ${u.initials}.`,
+            ttl: 5000,
+          });
+        }}
+      />
 
       <ToastStack toasts={toasts} onDismiss={(id) => store.dismissToast(id)} />
 

@@ -1,4 +1,5 @@
 import type { Leaf } from '../types';
+import { LEGACY_USER_ID } from '../types';
 
 export function welcomeLeaf(): Leaf {
   const now = new Date().toISOString();
@@ -9,6 +10,9 @@ export function welcomeLeaf(): Leaf {
     pinned: true,
     created: now,
     edited: now,
+    authorId: LEGACY_USER_ID,
+    lastEditedBy: LEGACY_USER_ID,
+    contributors: [LEGACY_USER_ID],
     body: `Quire is a **single-file notebook**. Open this very page, and everything you'll ever write lives inside it. No server, no database — just one HTML file that travels with you.
 
 Every note is called a *leaf*. Leaves can be linked together with [[Wikilinks]], grouped with tags like #zettel, and arranged into a stream you can read like a river.

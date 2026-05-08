@@ -1,8 +1,9 @@
 import { useMemo, DragEvent } from 'react';
-import type { Leaf, BacklinkRef } from '../types';
+import type { Leaf, BacklinkRef, User, UserID } from '../types';
 import { Icon } from './Icon';
 import { formatRel } from '../lib/utils';
 import { renderMarkdown } from '../lib/markdown';
+import { AuthorChip, AuthorChipPair } from './AuthorChip';
 
 interface LeafCardProps {
   leaf: Leaf;
@@ -18,9 +19,11 @@ interface LeafCardProps {
   onClose: () => void;
   onWikilink: (title: string) => void;
   onTag: (tag: string) => void;
+  onAuthorClick: (id: UserID) => void;
   onChange: (next: Leaf) => void;
   onToggleEdit: () => void;
   onTogglePin: () => void;
+  getUser: (id: UserID | null | undefined) => User | null;
   dragHandlers: {
     draggable: boolean;
     onDragStart: (e: DragEvent) => void;
@@ -44,15 +47,29 @@ export function LeafCard({
   onClose,
   onWikilink,
   onTag,
+  onAuthorClick,
   onChange,
   onToggleEdit,
   onTogglePin,
+  getUser,
   dragHandlers,
 }: LeafCardProps) {
   const ctx = useMemo(
     () => ({ exists, onWikilink, onTag }),
     [exists, onWikilink, onTag],
   );
+
+  const author = getUser(leaf.authorId);
+  const editor = getUser(leaf.lastEditedBy);
+  const contributorCount = (leaf.contributors || []).length;
+  const authorTitle = author
+    ? `Created by ${author.name}${leaf.created ? ' on ' + new Date(leaf.created).toLocaleDateString() : ''}`
+    : 'Unknown author';
+  const editorTitle = editor
+    ? `Last edited by ${editor.name}, ${formatRel(leaf.edited)}${
+        contributorCount > 1 ? ' · ' + contributorCount + ' contributors' : ''
+      }`
+    : 'Unknown editor';
 
   return (
     <article
@@ -82,6 +99,21 @@ export function LeafCard({
             <h2 className="q-leaf-title">{leaf.title}</h2>
           )}
           <div className="q-leaf-meta">
+            <AuthorChipPair
+              author={author}
+              editor={editor}
+              authorTitle={authorTitle}
+              editorTitle={editorTitle}
+              onClickAuthor={(e) => {
+                e.stopPropagation();
+                if (author) onAuthorClick(author.id);
+              }}
+              onClickEditor={(e) => {
+                e.stopPropagation();
+                if (editor) onAuthorClick(editor.id);
+              }}
+            />
+            <span className="q-leaf-meta-sep">·</span>
             <span>{formatRel(leaf.edited)}</span>
             {leaf.tags.length > 0 && <span className="q-leaf-meta-sep">·</span>}
             {leaf.tags.slice(0, 4).map((t) => (
@@ -155,22 +187,35 @@ export function LeafCard({
             </span>
           </div>
           <div className="q-foot-list">
-            {backlinks.map((b) => (
-              <button
-                key={b.id}
-                className="q-bl-row"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onWikilink(b.title);
-                }}
-              >
-                <span className="q-bl-arrow">
-                  <Icon name="arrow" size={11} />
-                </span>
-                <span className="q-bl-title">{b.title}</span>
-                <span className="q-bl-snip">{b.snippet}</span>
-              </button>
-            ))}
+            {backlinks.map((b) => {
+              const blAuthor = getUser(b.authorId);
+              return (
+                <button
+                  key={b.id}
+                  className="q-bl-row"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onWikilink(b.title);
+                  }}
+                >
+                  <span className="q-bl-arrow">
+                    <Icon name="arrow" size={11} />
+                  </span>
+                  <span className="q-bl-title">{b.title}</span>
+                  <span className="q-bl-snip">{b.snippet}</span>
+                  {blAuthor && (
+                    <AuthorChip
+                      user={blAuthor}
+                      title={blAuthor.name}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAuthorClick(blAuthor.id);
+                      }}
+                    />
+                  )}
+                </button>
+              );
+            })}
           </div>
         </footer>
       )}

@@ -1,11 +1,13 @@
 import { openDB, IDBPDatabase } from 'idb';
-import type { WikiState, SaveStatus, Tier } from '../types';
+import type { WikiState, SaveStatus, Tier, UserID } from '../types';
+import { migrateToV2 } from '../lib/users';
 
 const DB_NAME = 'quire';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_DRAFTS = 'drafts';
 const STORE_HANDLES = 'handles';
 const STORE_META = 'meta';
+const STORE_IDENTITY = 'identity';
 
 interface QuireDB {
   drafts: { key: string; value: { state: WikiState; lastSaved: string } };
@@ -15,10 +17,15 @@ interface QuireDB {
 
 function getDB(): Promise<IDBPDatabase<any>> {
   return openDB(DB_NAME, DB_VERSION, {
-    upgrade(db) {
-      if (!db.objectStoreNames.contains(STORE_DRAFTS)) db.createObjectStore(STORE_DRAFTS);
-      if (!db.objectStoreNames.contains(STORE_HANDLES)) db.createObjectStore(STORE_HANDLES);
-      if (!db.objectStoreNames.contains(STORE_META)) db.createObjectStore(STORE_META);
+    upgrade(db, oldVersion) {
+      if (oldVersion < 1) {
+        if (!db.objectStoreNames.contains(STORE_DRAFTS)) db.createObjectStore(STORE_DRAFTS);
+        if (!db.objectStoreNames.contains(STORE_HANDLES)) db.createObjectStore(STORE_HANDLES);
+        if (!db.objectStoreNames.contains(STORE_META)) db.createObjectStore(STORE_META);
+      }
+      if (oldVersion < 2) {
+        if (!db.objectStoreNames.contains(STORE_IDENTITY)) db.createObjectStore(STORE_IDENTITY);
+      }
     },
   });
 }
@@ -33,6 +40,7 @@ function serializeWikiState(state: WikiState): string {
     focusedId: state.focusedId,
     settings: state.settings,
     lastSaved: state.lastSaved,
+    users: state.users,
   };
   // Escape `</` to `<\/` so embedded user text can't terminate the script tag early.
   return JSON.stringify(persisted).replace(/<\/(script)/gi, '<\\/$1');
@@ -68,6 +76,7 @@ export class WikiPersistence {
   private pendingState: WikiState | null = null;
   private channel: BroadcastChannel | null = null;
   public onRemoteUpdate: ((tier: Tier) => void) | null = null;
+  public onRemoteUserUpdate: ((userId: UserID) => void) | null = null;
 
   constructor() {
     this.status.tier = this.detectTier();
@@ -119,10 +128,10 @@ export class WikiPersistence {
       if (!el || !el.textContent) return null;
       const txt = el.textContent.trim();
       if (!txt || txt === '{}') return null;
-      const obj = JSON.parse(txt) as WikiState;
+      const obj = JSON.parse(txt);
       if (!obj || typeof obj !== 'object') return null;
       if (!obj.wikiId || !Array.isArray(obj.leaves)) return null;
-      return obj;
+      return migrateToV2(obj);
     } catch {
       return null;
     }
@@ -132,10 +141,40 @@ export class WikiPersistence {
     try {
       const db = await this.db();
       const rec = await db.get(STORE_DRAFTS, `draft:${wikiId}`);
-      if (rec && rec.state) return rec.state as WikiState;
+      if (rec && rec.state) return migrateToV2(rec.state);
       return null;
     } catch {
       return null;
+    }
+  }
+
+  // ─── identity ─────────────────────────────────────────────────────────
+  async getCurrentUserId(wikiId: string): Promise<UserID | null> {
+    try {
+      const db = await this.db();
+      const rec = await db.get(STORE_IDENTITY, `identity:${wikiId}`);
+      if (rec && rec.currentUserId) return rec.currentUserId as UserID;
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async setCurrentUserId(wikiId: string, userId: UserID): Promise<void> {
+    try {
+      const db = await this.db();
+      await db.put(STORE_IDENTITY, { wikiId, currentUserId: userId }, `identity:${wikiId}`);
+    } catch (err) {
+      console.warn('setCurrentUserId failed', err);
+    }
+  }
+
+  async clearIdentity(wikiId: string): Promise<void> {
+    try {
+      const db = await this.db();
+      await db.delete(STORE_IDENTITY, `identity:${wikiId}`);
+    } catch {
+      // ignore
     }
   }
 
@@ -409,6 +448,8 @@ export class WikiPersistence {
       this.channel.onmessage = (ev) => {
         if (ev.data?.type === 'updated') {
           this.onRemoteUpdate?.(this.status.tier);
+        } else if (ev.data?.type === 'userUpdated' && ev.data?.userId) {
+          this.onRemoteUserUpdate?.(ev.data.userId);
         }
       };
     } catch {
@@ -419,6 +460,14 @@ export class WikiPersistence {
   private broadcastUpdate() {
     try {
       this.channel?.postMessage({ type: 'updated', at: new Date().toISOString() });
+    } catch {
+      // ignore
+    }
+  }
+
+  broadcastUserUpdate(userId: UserID) {
+    try {
+      this.channel?.postMessage({ type: 'userUpdated', userId });
     } catch {
       // ignore
     }

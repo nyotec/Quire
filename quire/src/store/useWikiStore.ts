@@ -1,20 +1,31 @@
 import { create } from 'zustand';
-import type { Leaf, LeafID, WikiState, Settings, SaveStatus } from '../types';
-import { DEFAULT_SETTINGS } from '../types';
+import type {
+  ActiveFilter,
+  Leaf,
+  LeafID,
+  WikiState,
+  Settings,
+  SaveStatus,
+  User,
+  UserID,
+} from '../types';
+import { DEFAULT_SETTINGS, LEGACY_USER_ID } from '../types';
 import { extractTags, newLeafId, uuid, debounce } from '../lib/utils';
 import { persistence } from './persistence';
+import { touchLeaf, findUser } from '../lib/users';
 
 interface UIState {
   paletteOpen: boolean;
   paletteQuery: string;
   editingId: LeafID | null;
-  activeTag: string | null;
+  activeFilter: ActiveFilter;
   draggingId: LeafID | null;
   settingsOpen: boolean;
   toasts: ToastItem[];
   onboardingDismissed: boolean;
   remoteUpdateAvailable: boolean;
   saveStatus: SaveStatus;
+  needsIdentity: boolean;
 }
 
 export interface ToastItem {
@@ -26,20 +37,20 @@ export interface ToastItem {
 }
 
 export interface WikiStore extends UIState {
-  // canonical state
-  schemaVersion: 1;
+  schemaVersion: 2;
   wikiId: string;
   leaves: Leaf[];
   openIds: LeafID[];
   focusedId: LeafID | null;
   settings: Settings;
   lastSaved: string;
+  users: User[];
+  currentUserId: UserID | null;
 
-  // hydration
-  hydrate: (s: WikiState) => void;
+  hydrate: (s: WikiState, currentUserId: UserID | null) => void;
   getPersistableState: () => WikiState;
 
-  // ops
+  // leaf ops
   openLeaf: (id: LeafID) => void;
   closeLeaf: (id: LeafID) => void;
   moveLeaf: (id: LeafID, dir: -1 | 1) => void;
@@ -51,6 +62,11 @@ export interface WikiStore extends UIState {
   deleteLeaf: (id: LeafID) => void;
   togglePin: (id: LeafID) => void;
 
+  // user ops
+  setCurrentUser: (userId: UserID | null) => void;
+  addUser: (user: User) => void;
+  updateUser: (userId: UserID, patch: Partial<User>) => void;
+
   // settings
   setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   togglePlugin: (id: string) => void;
@@ -58,7 +74,7 @@ export interface WikiStore extends UIState {
   // ui
   setPaletteOpen: (open: boolean) => void;
   setPaletteQuery: (q: string) => void;
-  setActiveTag: (t: string | null) => void;
+  setActiveFilter: (f: ActiveFilter) => void;
   setDraggingId: (id: LeafID | null) => void;
   setSettingsOpen: (open: boolean) => void;
   pushToast: (t: Omit<ToastItem, 'id'>) => void;
@@ -66,17 +82,19 @@ export interface WikiStore extends UIState {
   setOnboardingDismissed: (v: boolean) => void;
   setRemoteUpdateAvailable: (v: boolean) => void;
   setSaveStatus: (s: SaveStatus) => void;
+  setNeedsIdentity: (v: boolean) => void;
 }
 
 function freshState(): WikiState {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     wikiId: uuid(),
     leaves: [],
     openIds: [],
     focusedId: null,
     settings: DEFAULT_SETTINGS,
     lastSaved: new Date().toISOString(),
+    users: [],
   };
 }
 
@@ -98,11 +116,9 @@ function scheduleSave() {
 export const useWikiStore = create<WikiStore>((set, get) => {
   const initial = freshState();
 
-  // After every mutation that should persist, we call scheduleSave.
   const persistAfter = <T extends (...a: any[]) => any>(fn: T): T => {
     return ((...args: any[]) => {
       const r = fn(...args);
-      // bump pending changes for tier B
       if (persistence.detectTier() === 'B') {
         const s = get();
         persistence.setPendingChanges(s.saveStatus.pendingChanges + 1);
@@ -114,39 +130,48 @@ export const useWikiStore = create<WikiStore>((set, get) => {
 
   return {
     ...initial,
+    currentUserId: null,
     paletteOpen: false,
     paletteQuery: '',
     editingId: null,
-    activeTag: null,
+    activeFilter: null,
     draggingId: null,
     settingsOpen: false,
     toasts: [],
     onboardingDismissed: false,
     remoteUpdateAvailable: false,
+    needsIdentity: false,
     saveStatus: persistence.getStatus(),
 
-    hydrate: (s) => {
+    hydrate: (s, currentUserId) => {
       set({
-        schemaVersion: s.schemaVersion,
+        schemaVersion: 2,
         wikiId: s.wikiId,
         leaves: s.leaves,
         openIds: s.openIds,
         focusedId: s.focusedId,
-        settings: { ...DEFAULT_SETTINGS, ...s.settings, plugins: { ...DEFAULT_SETTINGS.plugins, ...(s.settings?.plugins || {}) } },
+        settings: {
+          ...DEFAULT_SETTINGS,
+          ...s.settings,
+          plugins: { ...DEFAULT_SETTINGS.plugins, ...(s.settings?.plugins || {}) },
+        },
         lastSaved: s.lastSaved,
+        users: s.users || [],
+        currentUserId,
       });
     },
 
     getPersistableState: () => {
       const s = get();
       return {
-        schemaVersion: 1,
+        schemaVersion: 2,
         wikiId: s.wikiId,
         leaves: s.leaves,
         openIds: s.openIds,
         focusedId: s.focusedId,
         settings: s.settings,
         lastSaved: s.lastSaved,
+        users: s.users,
       };
     },
 
@@ -158,7 +183,12 @@ export const useWikiStore = create<WikiStore>((set, get) => {
       scheduleSave();
       requestAnimationFrame(() => {
         const el = document.querySelector(`[data-leaf-id="${id}"]`);
-        if (el) (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+        if (el)
+          (el as HTMLElement).scrollIntoView({
+            behavior: 'smooth',
+            block: 'nearest',
+            inline: 'nearest',
+          });
       });
     },
 
@@ -211,6 +241,7 @@ export const useWikiStore = create<WikiStore>((set, get) => {
       const t = (title || 'Untitled').trim();
       const id = newLeafId(t);
       const now = new Date().toISOString();
+      const author = get().currentUserId || LEGACY_USER_ID;
       const leaf: Leaf = {
         id,
         title: t,
@@ -218,6 +249,9 @@ export const useWikiStore = create<WikiStore>((set, get) => {
         tags: [],
         created: now,
         edited: now,
+        authorId: author,
+        lastEditedBy: author,
+        contributors: [author],
       };
       set((s) => ({
         leaves: [leaf, ...s.leaves],
@@ -235,14 +269,17 @@ export const useWikiStore = create<WikiStore>((set, get) => {
     },
 
     updateLeaf: persistAfter((next: Leaf) => {
+      const currentUserId = get().currentUserId || LEGACY_USER_ID;
       set((s) => ({
         leaves: s.leaves.map((l) =>
           l.id === next.id
-            ? {
-                ...next,
-                edited: new Date().toISOString(),
-                tags: extractTags(next.body || ''),
-              }
+            ? touchLeaf(
+                {
+                  ...next,
+                  tags: extractTags(next.body || ''),
+                },
+                currentUserId,
+              )
             : l,
         ),
       }));
@@ -258,9 +295,31 @@ export const useWikiStore = create<WikiStore>((set, get) => {
     }),
 
     togglePin: persistAfter((id: LeafID) => {
+      const currentUserId = get().currentUserId || LEGACY_USER_ID;
       set((s) => ({
-        leaves: s.leaves.map((l) => (l.id === id ? { ...l, pinned: !l.pinned } : l)),
+        leaves: s.leaves.map((l) =>
+          l.id === id ? touchLeaf({ ...l, pinned: !l.pinned }, currentUserId) : l,
+        ),
       }));
+    }),
+
+    setCurrentUser: (userId) => set({ currentUserId: userId }),
+
+    addUser: persistAfter((user: User) => {
+      set((s) =>
+        s.users.find((u) => u.id === user.id) ? s : { users: [...s.users, user] },
+      );
+    }),
+
+    updateUser: persistAfter((userId: UserID, patch: Partial<User>) => {
+      set((s) => ({
+        users: s.users.map((u) => (u.id === userId ? { ...u, ...patch } : u)),
+      }));
+      try {
+        persistence.broadcastUserUpdate(userId);
+      } catch {
+        // ignore
+      }
     }),
 
     setSetting: persistAfter(<K extends keyof Settings>(key: K, value: Settings[K]) => {
@@ -278,7 +337,7 @@ export const useWikiStore = create<WikiStore>((set, get) => {
 
     setPaletteOpen: (open) => set({ paletteOpen: open }),
     setPaletteQuery: (q) => set({ paletteQuery: q }),
-    setActiveTag: (t) => set({ activeTag: t }),
+    setActiveFilter: (f) => set({ activeFilter: f }),
     setDraggingId: (id) => set({ draggingId: id }),
     setSettingsOpen: (open) => set({ settingsOpen: open }),
     pushToast: (t) =>
@@ -289,5 +348,17 @@ export const useWikiStore = create<WikiStore>((set, get) => {
     setOnboardingDismissed: (v) => set({ onboardingDismissed: v }),
     setRemoteUpdateAvailable: (v) => set({ remoteUpdateAvailable: v }),
     setSaveStatus: (s) => set({ saveStatus: s }),
+    setNeedsIdentity: (v) => set({ needsIdentity: v }),
   };
 });
+
+// ─── selectors ──────────────────────────────────────────────────────────────
+export function useCurrentUser(): User | null {
+  return useWikiStore((s) =>
+    s.currentUserId ? findUser(s.users, s.currentUserId) : null,
+  );
+}
+
+export function useUserById(id: UserID | null | undefined): User | null {
+  return useWikiStore((s) => findUser(s.users, id || null));
+}

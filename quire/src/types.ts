@@ -1,4 +1,14 @@
 export type LeafID = string;
+export type UserID = string;
+
+export interface User {
+  id: UserID;
+  name: string;
+  initials: string;
+  color: string;
+  joined: string;
+  lastSeen: string;
+}
 
 export interface Leaf {
   id: LeafID;
@@ -9,6 +19,9 @@ export interface Leaf {
   isJournal?: boolean;
   created: string;
   edited: string;
+  authorId: UserID;
+  lastEditedBy: UserID;
+  contributors: UserID[];
 }
 
 export type ThemeName = 'paper' | 'ink' | 'mono';
@@ -30,13 +43,14 @@ export interface Settings {
 }
 
 export interface WikiState {
-  schemaVersion: 1;
+  schemaVersion: 2;
   wikiId: string;
   leaves: Leaf[];
   openIds: LeafID[];
   focusedId: LeafID | null;
   settings: Settings;
   lastSaved: string;
+  users: User[];
 }
 
 export type Tier = 'A' | 'B' | 'C';
@@ -53,7 +67,15 @@ export interface BacklinkRef {
   id: LeafID;
   title: string;
   snippet: string;
+  authorId?: UserID;
 }
+
+export type ActiveFilter =
+  | { type: 'tag'; value: string }
+  | { type: 'author'; value: UserID }
+  | null;
+
+export const LEGACY_USER_ID: UserID = 'legacy';
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'paper',
