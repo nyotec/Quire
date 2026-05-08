@@ -154,6 +154,7 @@ export const useWikiStore = create<WikiStore>((set, get) => {
           ...DEFAULT_SETTINGS,
           ...s.settings,
           plugins: { ...DEFAULT_SETTINGS.plugins, ...(s.settings?.plugins || {}) },
+          tasks: { ...DEFAULT_SETTINGS.tasks, ...(s.settings?.tasks || {}) },
         },
         lastSaved: s.lastSaved,
         users: s.users || [],

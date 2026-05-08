@@ -168,6 +168,34 @@ export function SettingsDrawer({
             <div className="q-drawer-info">Persistence tier · {tier}</div>
           </Section>
 
+          <Section label="Tasks">
+            <Row label="Overdue badge in sidebar">
+              <Toggle
+                value={settings.tasks.showOverdueBadge}
+                onChange={(v) =>
+                  setSetting('tasks', { ...settings.tasks, showOverdueBadge: v })
+                }
+              />
+            </Row>
+            <Row label="Due date format">
+              <Seg
+                value={settings.tasks.dateFormat}
+                options={['relative', 'absolute', 'both']}
+                onChange={(v) =>
+                  setSetting('tasks', { ...settings.tasks, dateFormat: v })
+                }
+              />
+            </Row>
+            <div className="q-drawer-info">
+              Reduced motion ·{' '}
+              {typeof window !== 'undefined' &&
+              window.matchMedia &&
+              window.matchMedia('(prefers-reduced-motion: reduce)').matches
+                ? 'enabled by OS'
+                : 'not active'}
+            </div>
+          </Section>
+
           <Section label="Plugins">
             {Object.entries(settings.plugins).map(([id, on]) => (
               <Row key={id} label={pluginLabel(id)}>

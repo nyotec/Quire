@@ -166,6 +166,33 @@ When a user updates their own profile (name/initials/color), the channel also
 posts `{ type: 'userUpdated', userId }` so other tabs can refresh affected
 chips without a full reload.
 
+## Tasks (v1.2)
+
+Tasks are not a separate noun in the data model. They are a *property of lines*
+inside leaves. A task's identity is the pair `(leafId, lineNumber)`.
+
+- The markdown renderer parses task lines (`- [ ] …`, `- [x] …`) and attaches
+  the source line index to each rendered checkbox button.
+- Clicking a checkbox in render mode calls `toggleTaskOnLine(body, line)` from
+  `src/lib/tasks.ts`, which finds the exact line via regex, flips the bracket,
+  and returns the new body. The leaf is then updated through the existing
+  `updateLeaf` action — same path as any other edit, including the v1.1
+  attribution bookkeeping (`lastEditedBy`, `contributors`).
+- The Tasks view (`src/components/TasksView.tsx`) is a *virtual leaf* — same
+  visual chrome as a real card, but it is not in `openIds` and has no entry in
+  `state.leaves`. It lives in app-local UI state (`tasksOpen`, `tasksFocused`)
+  and renders in the river ahead of real leaves while open.
+- The task list shown in TasksView is derived: `allTasks(leaves)` flat-maps
+  `extractTasks` over every leaf on every render. This is fast enough for tens
+  of thousands of leaves; if it ever isn't, memoise per-leaf with a `WeakMap`.
+- Due dates use the syntax `@YYYY-MM-DD`. They render as `DueChip` only when
+  the renderer is processing task text (not paragraphs), guarded by the
+  `isTaskText` flag passed into `renderInline`.
+- Code blocks are skipped during task extraction (the `inFence` flag in
+  `extractTasks`) so a `- [ ]` inside a fenced code sample isn't picked up.
+- Settings.tasks (`{ showOverdueBadge, dateFormat }`) is migrated on hydrate
+  by merging defaults if absent — older v1.1 files load cleanly into v1.2.
+
 ## User identity (v1.1)
 
 `WikiState` carries a `users: User[]` registry. Each `User` has a stable

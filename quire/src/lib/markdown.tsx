@@ -1,9 +1,12 @@
 import { ReactNode } from 'react';
+import { DueChip } from '../components/DueChip';
 
 export interface MarkdownCtx {
   exists: (title: string) => boolean;
   onWikilink: (target: string) => void;
   onTag?: (tag: string) => void;
+  onTaskToggle?: (line: number) => void;
+  dateFormat?: 'relative' | 'absolute' | 'both';
 }
 
 const RX = {
@@ -17,7 +20,18 @@ const RX = {
   tableSep: /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/,
 };
 
-export function renderInline(text: string, ctx: MarkdownCtx): ReactNode[] {
+const DUE_RX = /^@(\d{4}-\d{2}-\d{2})\b/;
+
+interface RenderInlineOptions {
+  isTaskText?: boolean;
+  taskDone?: boolean;
+}
+
+export function renderInline(
+  text: string,
+  ctx: MarkdownCtx,
+  opts: RenderInlineOptions = {},
+): ReactNode[] {
   const out: ReactNode[] = [];
   if (!text) return out;
   let i = 0;
@@ -75,19 +89,37 @@ export function renderInline(text: string, ctx: MarkdownCtx): ReactNode[] {
 
     m = rest.match(/^\*\*([^*]+)\*\*/);
     if (m) {
-      push(<strong key={key++}>{renderInline(m[1], ctx)}</strong>);
+      push(<strong key={key++}>{renderInline(m[1], ctx, opts)}</strong>);
       i += m[0].length;
       continue;
     }
 
     m = rest.match(/^\*([^*\n]+)\*/);
     if (m) {
-      push(<em key={key++}>{renderInline(m[1], ctx)}</em>);
+      push(<em key={key++}>{renderInline(m[1], ctx, opts)}</em>);
       i += m[0].length;
       continue;
     }
 
     const prev = i === 0 ? ' ' : text[i - 1];
+
+    // @YYYY-MM-DD due-date chip — only inside task text, only at word boundary
+    if (opts.isTaskText && rest[0] === '@' && /\s/.test(prev)) {
+      m = rest.match(DUE_RX);
+      if (m) {
+        push(
+          <DueChip
+            key={key++}
+            date={m[1]}
+            done={!!opts.taskDone}
+            format={ctx.dateFormat || 'relative'}
+          />,
+        );
+        i += m[0].length;
+        continue;
+      }
+    }
+
     if (rest[0] === '#' && /\s/.test(prev)) {
       m = rest.match(/^#([a-zA-Z0-9][\w/-]*)/);
       if (m) {
@@ -109,7 +141,7 @@ export function renderInline(text: string, ctx: MarkdownCtx): ReactNode[] {
       }
     }
 
-    const stop = rest.search(/(\[\[|`|\*\*|\*|\[[^\]]+\]\(|#[a-zA-Z])/);
+    const stop = rest.search(/(\[\[|`|\*\*|\*|\[[^\]]+\]\(|#[a-zA-Z]|@\d{4}-\d{2}-\d{2})/);
     if (stop === -1) {
       push(rest);
       break;
@@ -223,11 +255,21 @@ export function renderMarkdown(text: string, ctx: MarkdownCtx): ReactNode[] {
     }
 
     if (RX.listItem.test(line) || RX.taskItem.test(line)) {
-      const items: { task: boolean; done?: boolean; text: string }[] = [];
+      const items: {
+        task: boolean;
+        done?: boolean;
+        text: string;
+        sourceLine?: number;
+      }[] = [];
       while (i < lines.length && (RX.listItem.test(lines[i]) || RX.taskItem.test(lines[i]))) {
         const tm = lines[i].match(RX.taskItem);
         if (tm) {
-          items.push({ task: true, done: tm[2].toLowerCase() === 'x', text: tm[3] });
+          items.push({
+            task: true,
+            done: tm[2].toLowerCase() === 'x',
+            text: tm[3],
+            sourceLine: i,
+          });
         } else {
           const bm = lines[i].match(RX.listItem)!;
           items.push({ task: false, text: bm[2] });
@@ -235,16 +277,36 @@ export function renderMarkdown(text: string, ctx: MarkdownCtx): ReactNode[] {
         i++;
       }
       blocks.push(
-        <ul key={key++} className={'q-list' + (items.some((it) => it.task) ? ' q-list-tasks' : '')}>
+        <ul
+          key={key++}
+          className={'q-list' + (items.some((it) => it.task) ? ' q-list-tasks' : '')}
+        >
           {items.map((it, idx) => (
             <li key={idx} className={it.task ? 'q-task' : ''}>
-              {it.task && (
-                <span className={'q-checkbox' + (it.done ? ' q-checkbox-on' : '')}>
-                  {it.done ? '✓' : ''}
-                </span>
-              )}
+              {it.task &&
+                (ctx.onTaskToggle ? (
+                  <button
+                    type="button"
+                    className={'q-checkbox q-checkbox-btn' + (it.done ? ' q-checkbox-on' : '')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      if (typeof it.sourceLine === 'number')
+                        ctx.onTaskToggle?.(it.sourceLine);
+                    }}
+                    role="checkbox"
+                    aria-checked={!!it.done}
+                    aria-label={it.done ? 'Mark task incomplete' : 'Mark task complete'}
+                  >
+                    {it.done ? '✓' : ''}
+                  </button>
+                ) : (
+                  <span className={'q-checkbox' + (it.done ? ' q-checkbox-on' : '')}>
+                    {it.done ? '✓' : ''}
+                  </span>
+                ))}
               <span className={it.task && it.done ? 'q-task-done' : ''}>
-                {renderInline(it.text, ctx)}
+                {renderInline(it.text, ctx, { isTaskText: !!it.task, taskDone: !!it.done })}
               </span>
             </li>
           ))}

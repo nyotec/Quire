@@ -4,8 +4,10 @@ import { Icon } from './Icon';
 import { formatRel } from '../lib/utils';
 import { makeFuse } from '../lib/search';
 import { AuthorChip } from './AuthorChip';
+import { allTasks, sortTasks } from '../lib/tasks';
+import { DueChip } from './DueChip';
 
-type CmdMode = 'cmd' | 'tag' | 'body' | 'find' | 'author';
+type CmdMode = 'cmd' | 'tag' | 'body' | 'find' | 'author' | 'task';
 
 interface CmdResult {
   id: string;
@@ -21,7 +23,8 @@ export type PaletteCommand =
   | { kind: 'export-html' }
   | { kind: 'export-md' }
   | { kind: 'export-json' }
-  | { kind: 'settings' };
+  | { kind: 'settings' }
+  | { kind: 'tasks' };
 
 interface PaletteProps {
   open: boolean;
@@ -66,9 +69,11 @@ export function CommandPalette({
       ? 'tag'
       : query.startsWith('@')
         ? 'author'
-        : query.startsWith('/')
-          ? 'body'
-          : 'find';
+        : query.startsWith('!')
+          ? 'task'
+          : query.startsWith('/')
+            ? 'body'
+            : 'find';
 
   const userById = useMemo(() => new Map(users.map((u) => [u.id, u] as const)), [users]);
   const userCounts = useMemo(() => {
@@ -77,13 +82,16 @@ export function CommandPalette({
     return m;
   }, [leaves]);
 
+  const tasksAll = useMemo(() => allTasks(leaves), [leaves]);
+
   const results: CmdResult[] = useMemo(() => {
-    const q = query.replace(/^[>#@/]/, '').trim().toLowerCase();
+    const q = query.replace(/^[>#@!/]/, '').trim().toLowerCase();
     if (mode === 'cmd') {
       const cmds: CmdResult[] = [
         { id: 'cmd:new', label: 'New leaf', hint: '⌘N', run: () => onNew() },
         { id: 'cmd:save', label: 'Save Wiki', hint: '⌘S', run: () => onCommand({ kind: 'save' }) },
         { id: 'cmd:settings', label: 'Open settings', hint: '⌘,', run: () => onCommand({ kind: 'settings' }) },
+        { id: 'cmd:tasks', label: 'Open Tasks view', hint: '⌘⇧T', run: () => onCommand({ kind: 'tasks' }) },
         { id: 'cmd:theme:paper', label: 'Theme: Paper', hint: 'set', run: () => onCommand({ kind: 'theme', value: 'paper' }) },
         { id: 'cmd:theme:ink', label: 'Theme: Ink', hint: 'set', run: () => onCommand({ kind: 'theme', value: 'ink' }) },
         { id: 'cmd:theme:mono', label: 'Theme: Mono', hint: 'set', run: () => onCommand({ kind: 'theme', value: 'mono' }) },
@@ -141,6 +149,28 @@ export function CommandPalette({
           run: () => onOpenLeaf(l.id),
         }));
     }
+    if (mode === 'task') {
+      const open = sortTasks(
+        tasksAll.filter((t) => !t.done && (!q || t.text.toLowerCase().includes(q))),
+        'due',
+      ).slice(0, 12);
+      return open.map<CmdResult>((t) => ({
+        id: `task:${t.leafId}:${t.sourceLine}`,
+        label: (
+          <span>
+            <span className="q-checkbox" style={{ marginRight: 6 }} />
+            {t.text || '(empty)'}
+          </span>
+        ),
+        hint: (
+          <span>
+            {t.dueDate && <DueChip date={t.dueDate} done={t.done} />}{' '}
+            <span style={{ marginLeft: 6 }}>{t.leafTitle}</span>
+          </span>
+        ),
+        run: () => onOpenLeaf(t.leafId),
+      }));
+    }
     if (mode === 'body') {
       if (!q) return [];
       return leaves
@@ -190,7 +220,7 @@ export function CommandPalette({
         results[sel].run();
         onClose();
       } else if (query.trim()) {
-        onNew(query.replace(/^[>#@/]/, '').trim());
+        onNew(query.replace(/^[>#@!/]/, '').trim());
         onClose();
       }
     } else if (e.key === 'Escape') {
@@ -210,7 +240,9 @@ export function CommandPalette({
                   ? 'tag'
                   : mode === 'author'
                     ? 'dot'
-                    : 'search'
+                    : mode === 'task'
+                      ? 'check'
+                      : 'search'
             }
           />
           <input
@@ -219,7 +251,7 @@ export function CommandPalette({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKey}
-            placeholder="Type to find · > command · # tag · @ author · / search bodies"
+            placeholder="Type to find · > command · # tag · @ author · ! task · / search bodies"
           />
           <span className="q-palette-mode">{mode}</span>
         </div>
@@ -243,7 +275,7 @@ export function CommandPalette({
               <span>No matches.</span>
               <kbd>Enter</kbd>
               <span>
-                to create "<b>{query.replace(/^[>#@/]/, '').trim() || 'Untitled'}</b>"
+                to create "<b>{query.replace(/^[>#@!/]/, '').trim() || 'Untitled'}</b>"
               </span>
             </div>
           )}

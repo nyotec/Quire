@@ -67,3 +67,59 @@ export function formatBytes(n: number): string {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
+
+// ─── date helpers (for tasks v1.2) ────────────────────────────────────────
+export function todayISODate(): string {
+  // YYYY-MM-DD in local time, not UTC
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+export function compareDates(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+export type DueState = 'overdue' | 'today' | 'upcoming' | 'done';
+
+export function dueStatus(dueDate: string, done: boolean): DueState {
+  if (done) return 'done';
+  const today = todayISODate();
+  const cmp = compareDates(dueDate, today);
+  if (cmp < 0) return 'overdue';
+  if (cmp === 0) return 'today';
+  return 'upcoming';
+}
+
+export function isValidISODate(d: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+  const t = new Date(d + 'T00:00').getTime();
+  return !Number.isNaN(t);
+}
+
+export function daysBetween(a: string, b: string): number {
+  const ms = new Date(b + 'T00:00').getTime() - new Date(a + 'T00:00').getTime();
+  return Math.round(ms / 86400000);
+}
+
+export type DateFormat = 'relative' | 'absolute' | 'both';
+
+export function formatDue(dueDate: string, format: DateFormat = 'relative'): string {
+  if (!isValidISODate(dueDate)) return dueDate;
+  const today = todayISODate();
+  const diff = daysBetween(today, dueDate);
+  const absolute = new Date(dueDate + 'T00:00').toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+  let relative: string;
+  if (diff === 0) relative = 'today';
+  else if (diff === 1) relative = 'tomorrow';
+  else if (diff === -1) relative = 'yesterday';
+  else if (diff > 0 && diff < 7) relative = `in ${diff}d`;
+  else if (diff < 0 && diff > -7) relative = `${-diff}d ago`;
+  else relative = absolute;
+  if (format === 'absolute') return absolute;
+  if (format === 'both' && relative !== absolute) return `${relative} (${absolute})`;
+  return relative;
+}

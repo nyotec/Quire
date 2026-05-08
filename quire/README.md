@@ -89,6 +89,17 @@ A v1 file (no `users` registry) auto-upgrades on load: every existing leaf is
 re-attributed to a synthetic *Legacy author* (`··` chip) so it's visually clear which
 content predates the multi-user feature.
 
+## Tasks (v1.2)
+
+Tasks live as markdown text inside leaves — there is no separate database. The Tasks view is a derived projection.
+
+- Write `- [ ] do the thing` in any leaf. Switch to render mode and click the checkbox to mark it done. The leaf's markdown is edited surgically — only that line, only that bracket.
+- Add an optional due date with `@YYYY-MM-DD`: `- [ ] Reply to Marcus @2026-05-15`. Renders as a date chip; overdue tasks are red-tinted.
+- Press `⌘⇧T` (or click *Tasks* at the top of the sidebar) for a system-wide aggregated view: filter open/done/all, require due dates, sort by due / created / by-leaf.
+- Use `!` in the command palette to find tasks by text. Pressing Enter opens the source leaf.
+
+The Settings drawer has a *Tasks* section: toggle the sidebar overdue badge, and pick relative / absolute / both for due-date formatting.
+
 ## Keyboard shortcuts
 
 | Shortcut | Action |
@@ -100,9 +111,10 @@ content predates the multi-user feature.
 | `⌘[` / `⌘]` | Move focused leaf left / right |
 | `⌘S` / `Ctrl+S` | Save Wiki |
 | `⌘,` / `Ctrl+,` | Open settings |
+| `⌘⇧T` / `Ctrl+Shift+T` | Toggle Tasks view |
 | `Esc` | Close palette / settings |
 
-Inside the palette: `>` for commands, `#` for tags, `@` for authors, `/` for full-text body search.
+Inside the palette: `>` for commands, `#` for tags, `@` for authors, `!` for tasks, `/` for full-text body search.
 
 ## Extending
 

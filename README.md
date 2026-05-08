@@ -27,6 +27,7 @@ Quire is the spiritual descendant of TiddlyWiki: an entire personal wiki — Rea
 - **Tags & full-text search.** `#tags` extracted from prose, indexed, surfaced in the sidebar and command palette. Fuzzy title search with [Fuse.js](https://fusejs.io/), tag filter, full-body search, all reachable from `⌘K`.
 - **Three themes, two layouts.** Paper, Ink, Mono. River (horizontal cards) or Stack (vertical column). Density compact/regular/comfy. Settings drawer is a real Settings drawer, not a debug tool.
 - **Multi-user attribution.** Share the file with family or a small team. Each browser is a single resident user. Every leaf records its creator, last editor, and full contributor list. Author chips in the leaf header, a People sidebar, and an `@` mode in the palette let you see at a glance who wrote what.
+- **Tasks, in-place.** Markdown checkboxes (`- [ ] …`) actually toggle when clicked — the underlying markdown is edited surgically, not re-serialised. Optional `@YYYY-MM-DD` due dates render as chips with overdue colouring. `⌘⇧T` opens a system-wide Tasks view aggregated from every leaf.
 - **Markdown, with care.** A purpose-built renderer that returns React nodes (not HTML strings) so wikilinks and tags carry click handlers. Headings, hr, fenced code, blockquote, mixed bullet/task lists, tables, bold/italic/inline-code, external links.
 - **Tiny.** ~360 KB total — React + ReactDOM + the entire app + your starting notes — all gzipped to about 110 KB.
 
@@ -90,9 +91,10 @@ This is **not real-time collaboration**. Treat Quire as an annotated turn-taking
 | `⌘[` / `⌘]` | Move focused leaf left / right |
 | `⌘S` / `Ctrl+S` | Save Wiki |
 | `⌘,` / `Ctrl+,` | Open settings |
+| `⌘⇧T` / `Ctrl+Shift+T` | Toggle Tasks view |
 | `Esc` | Close palette / settings |
 
-Inside the palette: `>` for commands, `#` for tags, `@` for authors, `/` for full-text body search.
+Inside the palette: `>` for commands, `#` for tags, `@` for authors, `!` for tasks, `/` for full-text body search.
 
 ---
 
@@ -208,6 +210,7 @@ Issues and pull requests are welcome. A few notes:
 |---|---|
 | v1.0 | Single-file build, layered persistence (Tier A/B/C), wikilinks, backlinks, tags, command palette, settings drawer |
 | v1.1 | Multi-user attribution: per-browser identity, author chips, People sidebar, `@` palette mode, schema migration |
+| v1.2 | Tasks: interactive checkboxes that surgically edit markdown, optional `@YYYY-MM-DD` due dates, system-wide Tasks view, `!` palette mode, sidebar Tasks row + Upcoming list |
 
 The HTML data block carries `schemaVersion`. Old files auto-upgrade on load — you can always open a v1 file in a v1.1 build, never the other way around.
 
