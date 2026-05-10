@@ -32,7 +32,6 @@ import {
 import {
   decryptLeafBody,
   encryptForFolder,
-  isLeafAccessible,
   lockFolder as lockFolderKey,
   makeFolderProtection,
   unlockFolderKey,
@@ -633,16 +632,18 @@ export default function App() {
         !!folder.protection?.hideName,
         !!folder.protection?.hideContents,
       );
-      // Decrypt then re-encrypt every directly-protected leaf
-      const reEntries: { id: string; body: any }[] = [];
+      // Decrypt with the old key first; collect plaintexts before swapping keys.
+      const plaintexts: { id: string; pt: string }[] = [];
       for (const l of protectedByThis) {
         const pt = await decryptLeafBody(all.folders, l);
-        // Set new key first so encryptForFolder uses it
+        plaintexts.push({ id: l.id, pt: pt ?? '' });
       }
+      // Now switch to the new key and re-encrypt.
       unlockFolderKey(folder, newKey);
-      for (const l of protectedByThis) {
-        const pt = await decryptLeafBody(all.folders, l);
-        const enc = await encryptForFolder(all.folders, l.folderId || null, pt ?? '');
+      const reEntries: { id: string; body: any }[] = [];
+      for (const { id, pt } of plaintexts) {
+        const l = protectedByThis.find((x) => x.id === id)!;
+        const enc = await encryptForFolder(all.folders, l.folderId || null, pt);
         reEntries.push({ id: l.id, body: enc });
       }
       store.setFolderProtection(folder.id, protection);
