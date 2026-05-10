@@ -1,5 +1,13 @@
 import { useCallback, useMemo, DragEvent } from 'react';
-import type { Leaf, BacklinkRef, DateFormat, User, UserID } from '../types';
+import type {
+  BacklinkRef,
+  DateFormat,
+  Folder,
+  FolderID,
+  Leaf,
+  User,
+  UserID,
+} from '../types';
 import { Icon } from './Icon';
 import { formatRel } from '../lib/utils';
 import { renderMarkdown } from '../lib/markdown';
@@ -7,6 +15,8 @@ import { toggleTaskOnLine } from '../lib/tasks';
 import { AuthorChip, AuthorChipPair } from './AuthorChip';
 import { useShortcuts } from '../lib/hotkeys';
 import { bodyAsString } from '../lib/lockState';
+import { Breadcrumbs } from './Breadcrumbs';
+import { isLeafAccessible } from '../lib/folderCrypto';
 
 interface LeafCardProps {
   leaf: Leaf;
@@ -29,6 +39,8 @@ interface LeafCardProps {
   onTogglePin: () => void;
   getUser: (id: UserID | null | undefined) => User | null;
   dateFormat?: DateFormat;
+  folders?: Folder[];
+  onFolderClick?: (id: FolderID) => void;
   dragHandlers: {
     draggable: boolean;
     onDragStart: (e: DragEvent) => void;
@@ -59,8 +71,11 @@ export function LeafCard({
   onTogglePin,
   getUser,
   dateFormat,
+  folders,
+  onFolderClick,
   dragHandlers,
 }: LeafCardProps) {
+  const accessible = folders ? isLeafAccessible(folders, leaf) : true;
   const bodyText = bodyAsString(leaf);
   const onTaskToggle = useCallback(
     (line: number) => {
@@ -128,6 +143,13 @@ export function LeafCard({
           <Icon name="drag" size={12} />
         </div>
         <div className="q-leaf-titlebar">
+          {folders && leaf.folderId && onFolderClick && (
+            <Breadcrumbs
+              folders={folders}
+              folderId={leaf.folderId}
+              onClickSegment={onFolderClick}
+            />
+          )}
           {editing ? (
             <input
               className="q-leaf-title-input"
@@ -213,6 +235,13 @@ export function LeafCard({
             onClick={(e) => e.stopPropagation()}
             spellCheck={false}
           />
+        ) : !accessible ? (
+          <div className="q-md q-md-locked">
+            <p className="q-p" style={{ color: 'var(--q-dim)' }}>
+              <Icon name="lock" size={11} /> This leaf is in a locked folder.
+              Unlock the folder to read it.
+            </p>
+          </div>
         ) : (
           <div className="q-md">{renderMarkdown(bodyText, ctx)}</div>
         )}

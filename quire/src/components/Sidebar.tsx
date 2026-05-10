@@ -1,6 +1,6 @@
 import { ReactNode, useMemo, useState } from 'react';
 import { Icon, IconName } from './Icon';
-import type { ActiveFilter, Leaf, LeafID, User, UserID } from '../types';
+import type { ActiveFilter, Folder, FolderID, Leaf, LeafID, User, UserID } from '../types';
 import { formatRel } from '../lib/utils';
 import {
   TaskCounts,
@@ -9,6 +9,7 @@ import {
   computeCounts,
   sortTasks,
 } from '../lib/tasks';
+import { FolderTree } from './FolderTree';
 
 interface SidebarProps {
   leaves: Leaf[];
@@ -28,6 +29,11 @@ interface SidebarProps {
   currentUserId: UserID | null;
   onOpenTasks: () => void;
   showOverdueBadge: boolean;
+  folders: Folder[];
+  onFolderFilter: (id: FolderID | null, deep: boolean) => void;
+  onFolderCreate: (parentId: FolderID | null) => void;
+  onFolderContextMenu: (folder: Folder, evt: { x: number; y: number }) => void;
+  showLeafCounts: boolean;
 }
 
 export function Sidebar({
@@ -48,6 +54,11 @@ export function Sidebar({
   currentUserId,
   onOpenTasks,
   showOverdueBadge,
+  folders,
+  onFolderFilter,
+  onFolderCreate,
+  onFolderContextMenu,
+  showLeafCounts,
 }: SidebarProps) {
   const activeTag = activeFilter?.type === 'tag' ? activeFilter.value : null;
   const activeAuthor = activeFilter?.type === 'author' ? activeFilter.value : null;
@@ -169,6 +180,18 @@ export function Sidebar({
           ))}
         </SidebarSection>
       )}
+
+      <SidebarSection label="Folders" icon="book">
+        <FolderTree
+          folders={folders}
+          leaves={leaves}
+          activeFilter={activeFilter}
+          onFilterFolder={onFolderFilter}
+          onCreateFolder={onFolderCreate}
+          onContextMenu={onFolderContextMenu}
+          showLeafCounts={showLeafCounts}
+        />
+      </SidebarSection>
 
       {upcoming.length > 0 && (
         <SidebarSection label="Upcoming" icon="check">

@@ -1,7 +1,7 @@
 import { openDB, IDBPDatabase } from 'idb';
 import type { WikiState, SaveStatus, Tier, UserID } from '../types';
 import { migrateToV2 } from '../lib/users';
-import { migrateToV3 } from '../lib/migrate';
+import { migrateToV3, migrateToV4 } from '../lib/migrate';
 import {
   compress,
   decompress,
@@ -40,7 +40,7 @@ function getDB(): Promise<IDBPDatabase<any>> {
 function serializeWikiState(state: WikiState): string {
   // Strip transient UI fields. We only persist data + settings + open/focused IDs.
   const persisted: WikiState = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     wikiId: state.wikiId,
     leaves: state.leaves,
     openIds: state.openIds,
@@ -50,6 +50,7 @@ function serializeWikiState(state: WikiState): string {
     users: state.users,
     protection: state.protection,
     autolock: state.autolock,
+    folders: state.folders || [],
   };
   return JSON.stringify(persisted);
 }
@@ -162,7 +163,7 @@ export class WikiPersistence {
       const obj = JSON.parse(json);
       if (!obj || typeof obj !== 'object') return null;
       if (!obj.wikiId || !Array.isArray(obj.leaves)) return null;
-      return migrateToV3(migrateToV2(obj));
+      return migrateToV4(migrateToV3(migrateToV2(obj)));
     } catch {
       return null;
     }
@@ -172,7 +173,7 @@ export class WikiPersistence {
     try {
       const db = await this.db();
       const rec = await db.get(STORE_DRAFTS, `draft:${wikiId}`);
-      if (rec && rec.state) return migrateToV3(migrateToV2(rec.state));
+      if (rec && rec.state) return migrateToV4(migrateToV3(migrateToV2(rec.state)));
       return null;
     } catch {
       return null;

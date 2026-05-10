@@ -17,7 +17,32 @@ import { LockOverlay } from './components/LockOverlay';
 import { PasswordSetupDialog } from './components/PasswordSetupDialog';
 import { ChangePasswordDialog } from './components/ChangePasswordDialog';
 import { SidebarDrawer } from './components/SidebarDrawer';
+import {
+  FolderContextMenu,
+  useFolderContextMenuState,
+} from './components/FolderContextMenu';
+import { FolderEncryptDialog } from './components/FolderEncryptDialog';
+import { FolderChangePasswordDialog } from './components/FolderChangePasswordDialog';
+import { FolderUnlockCard } from './components/FolderUnlockCard';
 import { useIsMobile } from './lib/useMediaQuery';
+import {
+  closestProtectedAncestor,
+  leavesInFolder as leavesInFolderHelper,
+} from './lib/folders';
+import {
+  decryptLeafBody,
+  encryptForFolder,
+  isLeafAccessible,
+  lockFolder as lockFolderKey,
+  makeFolderProtection,
+  unlockFolderKey,
+  verifyFolderPassword,
+} from './lib/folderCrypto';
+import {
+  clearAllFolderKeys,
+  isFolderUnlocked,
+  subscribeFolderTick,
+} from './lib/lockState';
 import { buildIndex, tagCounts } from './lib/wikilinks';
 import { formatBytes, formatRel, uuid } from './lib/utils';
 import { ShortcutAction, setShortcutsSuppressed, useShortcuts } from './lib/hotkeys';
@@ -179,6 +204,17 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   const [changePwdOpen, setChangePwdOpen] = useState<null | 'change' | 'disable'>(null);
+  const folderMenu = useFolderContextMenuState();
+  const [folderEncryptTarget, setFolderEncryptTarget] = useState<string | null>(null);
+  const [folderChangePwdTarget, setFolderChangePwdTarget] = useState<{
+    folderId: string;
+    variant: 'change' | 'disable';
+  } | null>(null);
+  const [folderUnlockTarget, setFolderUnlockTarget] = useState<string | null>(null);
+  const [folderTick, setFolderTick] = useState(0);
+  // Subscribe to folder lock changes so the UI re-renders.
+  useEffect(() => subscribeFolderTick(() => setFolderTick((n) => n + 1)), []);
+  void folderTick;
   const [shortcutHintShown, setShortcutHintShown] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [navHistory, setNavHistory] = useState<string[]>([]);
@@ -235,6 +271,81 @@ export default function App() {
   const onEnablePassword = useCallback(() => setSetupOpen(true), []);
   const onChangePassword = useCallback(() => setChangePwdOpen('change'), []);
   const onDisablePassword = useCallback(() => setChangePwdOpen('disable'), []);
+
+  // ─── folder menu actions ─────────────────────────────────────────────
+  const folderActions = useMemo(
+    () => ({
+      onNewSubfolder: (f: any) => {
+        const name = window.prompt(`New folder under "${f.name}"`, 'Folder');
+        if (!name) return;
+        store.createFolder(name.trim() || 'Folder', f.id);
+      },
+      onRename: (f: any) => {
+        const name = window.prompt('Rename folder', f.name);
+        if (!name) return;
+        store.renameFolder(f.id, name.trim() || f.name);
+      },
+      onMove: (f: any) => {
+        const allFolders = useWikiStore.getState().folders;
+        const candidates = allFolders.filter((other) => other.id !== f.id);
+        const choice = window.prompt(
+          `Move "${f.name}" to which folder?\n(leave blank for root, or type the name)`,
+          '',
+        );
+        if (choice === null) return;
+        const target = choice.trim();
+        if (!target) {
+          store.moveFolder(f.id, null);
+          return;
+        }
+        const match = candidates.find(
+          (c) => c.name.toLowerCase() === target.toLowerCase(),
+        );
+        if (!match) {
+          alert(`No folder named "${target}".`);
+          return;
+        }
+        const ok = store.moveFolder(f.id, match.id);
+        if (!ok) alert('Cannot move a folder into itself or its descendants.');
+      },
+      onChangeIcon: (f: any) => {
+        const icon = window.prompt(
+          'Folder icon (single emoji or character; leave blank for default)',
+          f.icon || '',
+        );
+        if (icon === null) return;
+        store.setFolderIcon(f.id, icon.trim() || null);
+      },
+      onEncrypt: (f: any) => setFolderEncryptTarget(f.id),
+      onChangePassword: (f: any) =>
+        setFolderChangePwdTarget({ folderId: f.id, variant: 'change' }),
+      onDisableProtection: (f: any) =>
+        setFolderChangePwdTarget({ folderId: f.id, variant: 'disable' }),
+      onLockNow: (f: any) => {
+        const allLeaves = useWikiStore.getState().leaves;
+        lockFolderKey(f, allLeaves);
+      },
+      onDelete: (f: any) => {
+        const folderObj = useWikiStore
+          .getState()
+          .folders.find((x) => x.id === f.id);
+        if (!folderObj) return;
+        const childLeafCount = useWikiStore
+          .getState()
+          .leaves.filter((l) => l.folderId === f.id).length;
+        const cascade = window.confirm(
+          `Delete "${f.name}"?\n\n` +
+            `OK = also delete its leaves and sub-folders (cascade).\n` +
+            `Cancel = orphan leaves to "All notes" and promote sub-folders to root.\n\n` +
+            (childLeafCount > 5
+              ? `WARNING: cascade would delete ${childLeafCount}+ leaves.`
+              : ''),
+        );
+        store.deleteFolder(f.id, cascade ? 'cascade' : 'orphan');
+      },
+    }),
+    [store],
+  );
 
   const commitSetup = useCallback(
     async (r: {
@@ -371,6 +482,222 @@ export default function App() {
     } catch {
       return false;
     }
+  }, []);
+
+  // ─── folder encryption commits ───────────────────────────────────────
+  const commitFolderEncrypt = useCallback(
+    async (args: { password: string; hideName: boolean; hideContents: boolean }) => {
+      const folderId = folderEncryptTarget;
+      if (!folderId) return;
+      const all = useWikiStore.getState();
+      const folder = all.folders.find((f) => f.id === folderId);
+      if (!folder) return;
+      const { key, protection } = await makeFolderProtection(
+        args.password,
+        args.hideName,
+        args.hideContents,
+      );
+      // Determine which leaves get re-encrypted with this folder's key:
+      // every leaf whose closest enclosing protected ancestor (after we add
+      // this folder's protection) is THIS folder. That's: any leaf in this
+      // folder or any descendant, NOT inside a separately-protected sub-folder.
+      const protectedDescendants = all.folders.filter(
+        (f) => f.id !== folder.id && !!f.protection,
+      );
+      const blockedSubtreeIds = new Set<string>();
+      for (const pf of protectedDescendants) {
+        // collect descendants of pf (inclusive)
+        const queue = [pf.id];
+        while (queue.length) {
+          const cur = queue.shift()!;
+          blockedSubtreeIds.add(cur);
+          for (const f of all.folders) {
+            if (f.parentId === cur && !blockedSubtreeIds.has(f.id))
+              queue.push(f.id);
+          }
+        }
+      }
+      // descendants of `folder`
+      const targetSubtree = new Set<string>([folder.id]);
+      const queue2 = [folder.id];
+      while (queue2.length) {
+        const cur = queue2.shift()!;
+        for (const f of all.folders) {
+          if (f.parentId === cur && !targetSubtree.has(f.id)) {
+            targetSubtree.add(f.id);
+            queue2.push(f.id);
+          }
+        }
+      }
+      const leavesToEncrypt = all.leaves.filter(
+        (l) =>
+          l.folderId &&
+          targetSubtree.has(l.folderId) &&
+          !blockedSubtreeIds.has(l.folderId),
+      );
+      // Cache the folder key so encryption + later reads work
+      unlockFolderKey(folder, key);
+      const entries: { id: string; body: any }[] = [];
+      for (const l of leavesToEncrypt) {
+        const pt = typeof l.body === 'string' ? l.body : '';
+        const enc = await encryptForFolder(all.folders, l.folderId || null, pt);
+        entries.push({ id: l.id, body: enc });
+      }
+      // Save protection + encrypted leaves
+      store.setFolderProtection(folder.id, protection);
+      store.setLeafBodies(entries);
+      setFolderEncryptTarget(null);
+      // Lock immediately so user re-verifies
+      lockFolderKey(folder, all.leaves);
+      try {
+        await persistence.save(useWikiStore.getState().getPersistableState());
+      } catch (err) {
+        console.warn('save after folder encrypt failed', err);
+      }
+    },
+    [folderEncryptTarget, store],
+  );
+
+  const verifyFolderPwdAdapter = useCallback(
+    async (folder: any, pwd: string) => {
+      try {
+        const k = await verifyFolderPassword(folder, pwd);
+        return !!k;
+      } catch {
+        return false;
+      }
+    },
+    [],
+  );
+
+  const commitFolderChangePassword = useCallback(
+    async ({
+      folder,
+      currentPassword,
+      newPassword,
+    }: {
+      folder: any;
+      currentPassword: string;
+      newPassword?: string;
+    }) => {
+      const oldKey = await verifyFolderPassword(folder, currentPassword);
+      if (!oldKey) throw new Error('Current password is incorrect.');
+      unlockFolderKey(folder, oldKey);
+
+      const all = useWikiStore.getState();
+      const variant = folderChangePwdTarget?.variant || 'change';
+
+      // Find leaves directly protected by this folder's key (i.e., closest
+      // protected ancestor === this folder).
+      const protectedByThis = all.leaves.filter(
+        (l) =>
+          closestProtectedAncestor(all.folders, l.folderId || null)?.id ===
+          folder.id,
+      );
+
+      if (variant === 'disable') {
+        // Decrypt with old key.
+        const decrypted: { id: string; body: any }[] = [];
+        for (const l of protectedByThis) {
+          const pt = await decryptLeafBody(all.folders, l);
+          decrypted.push({ id: l.id, body: pt ?? '' });
+        }
+        // Remove protection
+        store.setFolderProtection(folder.id, undefined);
+        // After removing protection, leaves' new closest enclosing protected
+        // ancestor may be the parent. Re-encrypt with that parent's key, if any.
+        const updated = useWikiStore.getState().folders;
+        const reEntries: { id: string; body: any }[] = [];
+        for (const e of decrypted) {
+          const leaf = all.leaves.find((l) => l.id === e.id)!;
+          const enc = closestProtectedAncestor(updated, leaf.folderId || null);
+          if (enc) {
+            const body = await encryptForFolder(updated, leaf.folderId || null, e.body);
+            reEntries.push({ id: e.id, body });
+          } else {
+            reEntries.push({ id: e.id, body: e.body });
+          }
+        }
+        store.setLeafBodies(reEntries);
+        // Wipe key
+        lockFolderKey(folder, useWikiStore.getState().leaves);
+        setFolderChangePwdTarget(null);
+        await persistence.save(useWikiStore.getState().getPersistableState());
+        return;
+      }
+
+      // change
+      if (!newPassword) throw new Error('New password missing');
+      const { key: newKey, protection } = await makeFolderProtection(
+        newPassword,
+        !!folder.protection?.hideName,
+        !!folder.protection?.hideContents,
+      );
+      // Decrypt then re-encrypt every directly-protected leaf
+      const reEntries: { id: string; body: any }[] = [];
+      for (const l of protectedByThis) {
+        const pt = await decryptLeafBody(all.folders, l);
+        // Set new key first so encryptForFolder uses it
+      }
+      unlockFolderKey(folder, newKey);
+      for (const l of protectedByThis) {
+        const pt = await decryptLeafBody(all.folders, l);
+        const enc = await encryptForFolder(all.folders, l.folderId || null, pt ?? '');
+        reEntries.push({ id: l.id, body: enc });
+      }
+      store.setFolderProtection(folder.id, protection);
+      store.setLeafBodies(reEntries);
+      setFolderChangePwdTarget(null);
+      // Lock so the user re-verifies
+      lockFolderKey(folder, useWikiStore.getState().leaves);
+      await persistence.save(useWikiStore.getState().getPersistableState());
+    },
+    [folderChangePwdTarget, store],
+  );
+
+  const handleFolderUnlock = useCallback(
+    async (password: string): Promise<boolean> => {
+      if (!folderUnlockTarget) return false;
+      const f = useWikiStore
+        .getState()
+        .folders.find((x) => x.id === folderUnlockTarget);
+      if (!f) return false;
+      const key = await verifyFolderPassword(f, password);
+      if (!key) return false;
+      unlockFolderKey(f, key);
+      setFolderUnlockTarget(null);
+      return true;
+    },
+    [folderUnlockTarget],
+  );
+
+  // When the user clicks into a locked folder, surface the unlock card.
+  // Hooked from FolderTree onFilterFolder.
+  const onFolderFilterClick = useCallback(
+    (fid: string | null, deep: boolean) => {
+      if (fid === null) {
+        store.setActiveFilter(null);
+        return;
+      }
+      const folder = useWikiStore.getState().folders.find((f) => f.id === fid);
+      if (folder?.protection && !isFolderUnlocked(fid)) {
+        setFolderUnlockTarget(fid);
+        return;
+      }
+      store.setActiveFilter({ type: 'folder', value: fid, deep });
+    },
+    [store],
+  );
+
+  // Wipe folder keys on activity-monitor lock.
+  useEffect(() => {
+    const wipeOnLock = () => clearAllFolderKeys();
+    // The existing doLockNow already wipes the master key; piggy-back via
+    // subscribing to lockState's locked transition.
+    const unsub = useLockState.subscribe((s, prev) => {
+      if (s.locked && !prev.locked) wipeOnLock();
+    });
+    return unsub;
   }, []);
 
   // ─── boot sequence ─────────────────────────────────────────────────────
@@ -619,15 +946,54 @@ export default function App() {
     openLeavesArr = openLeavesArr.filter((l) => l.tags.includes(activeFilter.value));
   } else if (activeFilter?.type === 'author') {
     openLeavesArr = openLeavesArr.filter((l) => l.authorId === activeFilter.value);
+  } else if (activeFilter?.type === 'folder') {
+    const target = activeFilter.value;
+    const deep = activeFilter.deep;
+    const include = new Set<string>([target]);
+    if (deep) {
+      // include all descendants
+      const queue = [target];
+      while (queue.length) {
+        const cur = queue.shift()!;
+        for (const f of store.folders) {
+          if (f.parentId === cur && !include.has(f.id)) {
+            include.add(f.id);
+            queue.push(f.id);
+          }
+        }
+      }
+    }
+    openLeavesArr = openLeavesArr.filter((l) => l.folderId && include.has(l.folderId));
   }
   const filterTotalCount =
     activeFilter?.type === 'tag'
       ? leaves.filter((l) => l.tags.includes(activeFilter.value)).length
       : activeFilter?.type === 'author'
         ? leaves.filter((l) => l.authorId === activeFilter.value).length
-        : 0;
+        : activeFilter?.type === 'folder'
+          ? (() => {
+              const include = new Set<string>([activeFilter.value]);
+              if (activeFilter.deep) {
+                const queue = [activeFilter.value];
+                while (queue.length) {
+                  const cur = queue.shift()!;
+                  for (const f of store.folders) {
+                    if (f.parentId === cur && !include.has(f.id)) {
+                      include.add(f.id);
+                      queue.push(f.id);
+                    }
+                  }
+                }
+              }
+              return leaves.filter((l) => l.folderId && include.has(l.folderId)).length;
+            })()
+          : 0;
   const filterAuthorUser =
     activeFilter?.type === 'author' ? getUser(activeFilter.value) : null;
+  const filterFolder =
+    activeFilter?.type === 'folder'
+      ? store.folders.find((f) => f.id === activeFilter.value) || null
+      : null;
 
   // ─── handlers ─────────────────────────────────────────────────────────
   const onWikilink = useCallback(
@@ -996,7 +1362,9 @@ export default function App() {
             ? `filtered: #${activeFilter.value}`
             : activeFilter?.type === 'author'
               ? `filtered: @${filterAuthorUser?.name || ''}`
-              : ''
+              : activeFilter?.type === 'folder'
+                ? `filtered: 📁 ${filterFolder?.name || ''}`
+                : ''
         }
         saveStatus={saveStatus}
         protectionMode={protection.mode}
@@ -1066,6 +1434,20 @@ export default function App() {
                 if (isMobile) setMobileSidebarOpen(false);
               }}
               showOverdueBadge={settings.tasks.showOverdueBadge}
+              folders={store.folders}
+              showLeafCounts={true}
+              onFolderFilter={(fid, deep) => {
+                onFolderFilterClick(fid, deep);
+                if (isMobile) setMobileSidebarOpen(false);
+              }}
+              onFolderCreate={(parentId) => {
+                const name = window.prompt('New folder name', 'Folder');
+                if (!name) return;
+                store.createFolder(name.trim() || 'Folder', parentId);
+              }}
+              onFolderContextMenu={(folder, pos) =>
+                folderMenu.open(folder, pos)
+              }
             />
           );
           if (isMobile) {
@@ -1089,6 +1471,25 @@ export default function App() {
                   Showing leaves tagged <b>#{activeFilter.value}</b> · {openLeavesArr.length} open ·{' '}
                   {filterTotalCount} total
                 </span>
+              ) : activeFilter.type === 'folder' ? (
+                <span>
+                  Showing leaves in <b>📁 {filterFolder?.name || 'unknown'}</b> ·{' '}
+                  {openLeavesArr.length} open · {filterTotalCount} total{' '}
+                  <label style={{ marginLeft: 12, fontSize: 11 }}>
+                    <input
+                      type="checkbox"
+                      checked={activeFilter.deep}
+                      onChange={(e) =>
+                        store.setActiveFilter({
+                          type: 'folder',
+                          value: activeFilter.value,
+                          deep: e.target.checked,
+                        })
+                      }
+                    />{' '}
+                    Include sub-folders
+                  </label>
+                </span>
               ) : (
                 <span>
                   {filterAuthorUser && (
@@ -1107,6 +1508,19 @@ export default function App() {
           )}
 
           <div className={`q-river q-river-${settings.layout}`}>
+            {folderUnlockTarget && (() => {
+              const f = store.folders.find((x) => x.id === folderUnlockTarget);
+              if (!f) return null;
+              return (
+                <FolderUnlockCard
+                  folder={f}
+                  folders={store.folders}
+                  leaves={leaves}
+                  onUnlock={handleFolderUnlock}
+                  onCancel={() => setFolderUnlockTarget(null)}
+                />
+              );
+            })()}
             {tasksOpen && (
               <TasksView
                 focused={tasksFocused}
@@ -1168,6 +1582,8 @@ export default function App() {
                 }
                 onTogglePin={() => store.togglePin(leaf.id)}
                 dateFormat={settings.tasks.dateFormat}
+                folders={store.folders}
+                onFolderClick={(fid) => onFolderFilterClick(fid, true)}
                 dragHandlers={dragHandlers(leaf.id)}
               />
             ))}
@@ -1187,6 +1603,11 @@ export default function App() {
         onNew={(t) => store.newLeaf(t)}
         onCommand={onPaletteCommand}
         onAuthorFilter={onAuthorFilterFromPalette}
+        folders={store.folders}
+        onFolderFilter={(fid) => {
+          onFolderFilterClick(fid, true);
+          store.setPaletteOpen(false);
+        }}
       />
 
       <SettingsDrawer
@@ -1227,6 +1648,13 @@ export default function App() {
         onEnablePassword={onEnablePassword}
         onChangePassword={onChangePassword}
         onDisablePassword={onDisablePassword}
+        folders={store.folders}
+        onChangeFolderPassword={(f) =>
+          setFolderChangePwdTarget({ folderId: f.id, variant: 'change' })
+        }
+        onDisableFolderProtection={(f) =>
+          setFolderChangePwdTarget({ folderId: f.id, variant: 'disable' })
+        }
       />
 
       {/* Password setup */}
@@ -1247,6 +1675,48 @@ export default function App() {
         onCancel={() => setChangePwdOpen(null)}
         onVerifyCurrent={verifyCurrentPwd}
         onCommit={commitChangePassword}
+      />
+
+      {/* Folder dialogs */}
+      <FolderContextMenu
+        folder={folderMenu.menu.folder}
+        position={folderMenu.menu.position}
+        onClose={folderMenu.close}
+        actions={folderActions}
+      />
+      <FolderEncryptDialog
+        open={!!folderEncryptTarget}
+        folder={
+          store.folders.find((f) => f.id === folderEncryptTarget) || null
+        }
+        leafCount={
+          folderEncryptTarget
+            ? leavesInFolderHelper(
+                store.leaves,
+                store.folders,
+                folderEncryptTarget,
+                true,
+              ).length
+            : 0
+        }
+        onCancel={() => setFolderEncryptTarget(null)}
+        onCommit={commitFolderEncrypt}
+        onExportFolder={(_f) =>
+          persistence.exportJSON(useWikiStore.getState().getPersistableState())
+        }
+      />
+      <FolderChangePasswordDialog
+        open={!!folderChangePwdTarget}
+        folder={
+          folderChangePwdTarget
+            ? store.folders.find((f) => f.id === folderChangePwdTarget.folderId) ||
+              null
+            : null
+        }
+        variant={folderChangePwdTarget?.variant || 'change'}
+        onCancel={() => setFolderChangePwdTarget(null)}
+        onVerifyCurrent={verifyFolderPwdAdapter}
+        onCommit={commitFolderChangePassword}
       />
 
       {/* Lock overlay — rendered above everything when locked */}

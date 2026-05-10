@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import type {
   ActiveFilter,
   AutolockConfig,
+  Folder,
+  FolderID,
   Leaf,
   LeafBody,
   LeafID,
@@ -12,6 +14,7 @@ import type {
   User,
   UserID,
 } from '../types';
+import { isDescendant, uniqueSiblingName } from '../lib/folders';
 import {
   DEFAULT_AUTOLOCK,
   DEFAULT_PROTECTION,
@@ -46,7 +49,7 @@ export interface ToastItem {
 }
 
 export interface WikiStore extends UIState {
-  schemaVersion: 3;
+  schemaVersion: 4;
   wikiId: string;
   leaves: Leaf[];
   openIds: LeafID[];
@@ -77,6 +80,17 @@ export interface WikiStore extends UIState {
   deleteLeaf: (id: LeafID) => void;
   togglePin: (id: LeafID) => void;
 
+  // folder ops
+  folders: Folder[];
+  createFolder: (name: string, parentId: FolderID | null) => FolderID;
+  renameFolder: (id: FolderID, name: string) => void;
+  deleteFolder: (id: FolderID, mode: 'orphan' | 'cascade') => void;
+  moveFolder: (id: FolderID, newParentId: FolderID | null) => boolean;
+  setFolderColor: (id: FolderID, color: string | null) => void;
+  setFolderIcon: (id: FolderID, icon: string | null) => void;
+  setFolderProtection: (id: FolderID, protection: Folder['protection']) => void;
+  moveLeafToFolder: (leafId: LeafID, folderId: FolderID | null) => void;
+
   // user ops
   setCurrentUser: (userId: UserID | null) => void;
   addUser: (user: User) => void;
@@ -102,7 +116,7 @@ export interface WikiStore extends UIState {
 
 function freshState(): WikiState {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     wikiId: uuid(),
     leaves: [],
     openIds: [],
@@ -112,6 +126,7 @@ function freshState(): WikiState {
     users: [],
     protection: { ...DEFAULT_PROTECTION },
     autolock: { ...DEFAULT_AUTOLOCK },
+    folders: [],
   };
 }
 
@@ -162,7 +177,7 @@ export const useWikiStore = create<WikiStore>((set, get) => {
 
     hydrate: (s, currentUserId) => {
       set({
-        schemaVersion: 3,
+        schemaVersion: 4,
         wikiId: s.wikiId,
         leaves: s.leaves,
         openIds: s.openIds,
@@ -177,6 +192,7 @@ export const useWikiStore = create<WikiStore>((set, get) => {
         users: s.users || [],
         protection: { ...DEFAULT_PROTECTION, ...(s.protection || {}) },
         autolock: { ...DEFAULT_AUTOLOCK, ...(s.autolock || {}) },
+        folders: s.folders || [],
         currentUserId,
       });
     },
@@ -184,7 +200,7 @@ export const useWikiStore = create<WikiStore>((set, get) => {
     getPersistableState: () => {
       const s = get();
       return {
-        schemaVersion: 3,
+        schemaVersion: 4,
         wikiId: s.wikiId,
         leaves: s.leaves,
         openIds: s.openIds,
@@ -194,6 +210,7 @@ export const useWikiStore = create<WikiStore>((set, get) => {
         users: s.users,
         protection: s.protection,
         autolock: s.autolock,
+        folders: s.folders,
       };
     },
 
@@ -360,6 +377,122 @@ export const useWikiStore = create<WikiStore>((set, get) => {
         leaves: s.leaves.map((l) =>
           l.id === id ? touchLeaf({ ...l, pinned: !l.pinned }, currentUserId) : l,
         ),
+      }));
+    }),
+
+    // ─── folder CRUD ─────────────────────────────────────────────────────
+    createFolder: (name: string, parentId: FolderID | null): FolderID => {
+      const cur = get();
+      const id = uuid();
+      const safeName = uniqueSiblingName(cur.folders, parentId, (name || 'Folder').trim());
+      const folder: Folder = {
+        id,
+        name: safeName,
+        parentId,
+        created: new Date().toISOString(),
+      };
+      set((s) => ({ folders: [...s.folders, folder] }));
+      if (persistence.detectTier() === 'B') {
+        persistence.setPendingChanges(get().saveStatus.pendingChanges + 1);
+      }
+      scheduleSave();
+      return id;
+    },
+
+    renameFolder: persistAfter((id: FolderID, name: string) => {
+      set((s) => ({
+        folders: s.folders.map((f) =>
+          f.id === id
+            ? { ...f, name: uniqueSiblingName(s.folders, f.parentId, name.trim() || f.name, id) }
+            : f,
+        ),
+      }));
+    }),
+
+    deleteFolder: persistAfter((id: FolderID, mode: 'orphan' | 'cascade') => {
+      set((s) => {
+        if (mode === 'orphan') {
+          // Reparent direct children to root, unfile direct leaves
+          return {
+            folders: s.folders
+              .filter((f) => f.id !== id)
+              .map((f) => (f.parentId === id ? { ...f, parentId: null } : f)),
+            leaves: s.leaves.map((l) => (l.folderId === id ? { ...l, folderId: null } : l)),
+          };
+        }
+        // cascade: delete folder + descendants + their leaves
+        const toDelete = new Set<FolderID>([id]);
+        let added = true;
+        while (added) {
+          added = false;
+          for (const f of s.folders) {
+            if (f.parentId && toDelete.has(f.parentId) && !toDelete.has(f.id)) {
+              toDelete.add(f.id);
+              added = true;
+            }
+          }
+        }
+        return {
+          folders: s.folders.filter((f) => !toDelete.has(f.id)),
+          leaves: s.leaves.filter((l) => !l.folderId || !toDelete.has(l.folderId)),
+        };
+      });
+    }),
+
+    moveFolder: (id: FolderID, newParentId: FolderID | null): boolean => {
+      const cur = get();
+      if (id === newParentId) return false;
+      if (newParentId && isDescendant(cur.folders, id, newParentId)) return false;
+      set((s) => ({
+        folders: s.folders.map((f) => {
+          if (f.id !== id) return f;
+          const safeName = uniqueSiblingName(s.folders, newParentId, f.name, id);
+          return { ...f, parentId: newParentId, name: safeName };
+        }),
+      }));
+      if (persistence.detectTier() === 'B') {
+        persistence.setPendingChanges(get().saveStatus.pendingChanges + 1);
+      }
+      scheduleSave();
+      return true;
+    },
+
+    setFolderColor: persistAfter((id: FolderID, color: string | null) => {
+      set((s) => ({
+        folders: s.folders.map((f) =>
+          f.id === id ? { ...f, color: color || undefined } : f,
+        ),
+      }));
+    }),
+
+    setFolderIcon: persistAfter((id: FolderID, icon: string | null) => {
+      set((s) => ({
+        folders: s.folders.map((f) =>
+          f.id === id ? { ...f, icon: icon || undefined } : f,
+        ),
+      }));
+    }),
+
+    setFolderProtection: persistAfter(
+      (id: FolderID, protection: Folder['protection']) => {
+        set((s) => ({
+          folders: s.folders.map((f) =>
+            f.id === id
+              ? protection
+                ? { ...f, protection }
+                : (() => {
+                    const { protection: _drop, ...rest } = f;
+                    return rest as Folder;
+                  })()
+              : f,
+          ),
+        }));
+      },
+    ),
+
+    moveLeafToFolder: persistAfter((leafId: LeafID, folderId: FolderID | null) => {
+      set((s) => ({
+        leaves: s.leaves.map((l) => (l.id === leafId ? { ...l, folderId } : l)),
       }));
     }),
 

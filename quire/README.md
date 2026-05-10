@@ -137,6 +137,14 @@ Curtain mode (default) hides content visually after inactivity. Password mode (o
 - Pull-to-refresh on leaf bodies is suppressed.
 - Dynamic viewport (`100dvh`) is used where supported so the iOS keyboard doesn't push the editor off-screen.
 
+## Folders (v1.5)
+
+Folders sit alongside tags as a second axis of organisation. Each leaf has at most one folder (multi-folder membership is what tags are for). Folders nest — the sidebar shows a collapsible tree. Right-click any folder for rename / move / encrypt / change password / disable / delete.
+
+Each folder can have its own password, independent of the wiki master password. The 4-step setup dialog walks through warning + JSON export gate → password + strength meter → visibility-while-locked → confirm. Nested encryption follows the **closest enclosing protected ancestor** rule: a leaf is encrypted with whichever protected folder is nearest above it.
+
+A locked folder shows as 🔒 in the sidebar; clicking it (or following a wikilink into it) surfaces an inline unlock card. Lock state is per-tab, per-session; all folders relock together when the auto-lock timer fires.
+
 ## Size & performance (v1.4)
 
 - React is aliased to Preact at build time (~130 KB saved).

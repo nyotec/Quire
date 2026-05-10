@@ -5,6 +5,45 @@ React, all components, all CSS, and the user's notes data — is bundled into on
 HTML file via Vite's `vite-plugin-singlefile`. There are no runtime requests; it
 works fully offline from `file://`.
 
+## Folders & per-folder encryption (v1.5)
+
+Folders are a flat array in `WikiState.folders`; the tree is derived in
+`src/lib/folders.ts` (`buildFolderTree`). Each `Folder` carries:
+- `id`, `name`, `parentId`, `created` (always)
+- `color`, `icon` (optional)
+- `protection?` — when present, the folder is encrypted: `{ salt, iterations,
+  hash, verifier, hideName, hideContents }`.
+
+Each `Leaf` gains a `folderId: FolderID | null` field. `null` means unfiled
+(under "All notes"). The migrator `migrateToV4` self-heals broken references
+(missing parents → root; cycles → broken; bad folderIds → unfiled) on load.
+
+**Per-folder encryption.** Each protected folder has its own salt, iterations,
+verifier and derived key. The wiki master password from v1.3 is *independent*
+— a wiki can have either, both, or neither. The closest-enclosing-protected
+ancestor rule (in `closestProtectedAncestor`) decides which key protects a
+given leaf:
+
+- Walk up the parent chain from the leaf's folder.
+- The first folder you encounter with `protection` is the one whose key
+  encrypts this leaf.
+- If you reach the root without finding one, the leaf body is plaintext.
+
+So encrypting an outer folder encrypts every leaf in its subtree *except*
+those already covered by a separately-protected sub-folder. Disabling a
+folder's encryption re-encrypts its leaves with the parent's key (if any).
+
+`lockState.folderKeyRef` is a `Map<FolderID, CryptoKey>` of currently-unlocked
+folders, held outside Zustand so the keys never serialise. `subscribeFolderTick`
+lets the UI react to lock changes. When the v1.3 inactivity timer fires the
+master key wipes, the decryption cache clears, and every folder key clears
+in one shot — "I walked away → everything private again."
+
+A locked folder shows as `🔒` in the sidebar (with `hideName` / `hideContents`
+honoured). Clicking it surfaces `FolderUnlockCard` — an inline leaf-shaped
+prompt in the river. Wrong password shakes the input; right password unlocks
+the folder and replaces the card with the filtered river.
+
 ## Responsive layout (v1.4)
 
 Three breakpoints, defined in CSS and mirrored in `src/lib/useMediaQuery.ts`:
