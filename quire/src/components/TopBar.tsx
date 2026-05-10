@@ -1,6 +1,7 @@
 import { Icon } from './Icon';
-import type { ThemeName, SaveStatus } from '../types';
+import type { ThemeName, SaveStatus, ProtectionMode } from '../types';
 import { formatRel } from '../lib/utils';
+import { shortcutLabel } from '../lib/hotkeys';
 
 interface TopBarProps {
   onCmd: () => void;
@@ -9,11 +10,13 @@ interface TopBarProps {
   onToggleSidebar: () => void;
   onOpenSettings: () => void;
   onStatusClick: () => void;
+  onLockNow: () => void;
   theme: ThemeName;
   sidebarOpen: boolean;
   count: number;
   query: string;
   saveStatus: SaveStatus;
+  protectionMode: ProtectionMode;
 }
 
 function statusLabel(s: SaveStatus): { className: string; dot: string; text: string } {
@@ -48,11 +51,13 @@ export function TopBar({
   onToggleSidebar,
   onOpenSettings,
   onStatusClick,
+  onLockNow,
   theme,
   sidebarOpen,
   count,
   query,
   saveStatus,
+  protectionMode,
 }: TopBarProps) {
   const st = statusLabel(saveStatus);
   return (
@@ -69,6 +74,18 @@ export function TopBar({
         <button className={st.className} onClick={onStatusClick} title="Save status">
           <span className={st.dot} />
           <span>{st.text}</span>
+          {protectionMode === 'password' && (
+            <span className="q-status-key" title="Wiki is encrypted">
+              <Icon name="key" size={10} />
+            </span>
+          )}
+        </button>
+        <button
+          className="q-icon-btn q-lock-btn"
+          onClick={onLockNow}
+          title={`Lock now (${shortcutLabel('lock.now')})`}
+        >
+          <Icon name="lock" size={14} />
         </button>
       </div>
       <div className="q-top-c">
@@ -92,7 +109,8 @@ export function TopBar({
           <Icon name="gear" />
         </button>
         <button className="q-btn-primary" onClick={onNew}>
-          <Icon name="plus" size={11} /> New leaf <kbd className="q-kbd q-kbd-on">⌘N</kbd>
+          <Icon name="plus" size={11} /> New leaf{' '}
+          <kbd className="q-kbd q-kbd-on">{shortcutLabel('leaf.new')}</kbd>
         </button>
       </div>
     </header>

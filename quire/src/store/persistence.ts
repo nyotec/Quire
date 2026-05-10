@@ -1,6 +1,7 @@
 import { openDB, IDBPDatabase } from 'idb';
 import type { WikiState, SaveStatus, Tier, UserID } from '../types';
 import { migrateToV2 } from '../lib/users';
+import { migrateToV3 } from '../lib/migrate';
 
 const DB_NAME = 'quire';
 const DB_VERSION = 2;
@@ -33,7 +34,7 @@ function getDB(): Promise<IDBPDatabase<any>> {
 function serializeWikiState(state: WikiState): string {
   // Strip transient UI fields. We only persist data + settings + open/focused IDs.
   const persisted: WikiState = {
-    schemaVersion: state.schemaVersion,
+    schemaVersion: 3,
     wikiId: state.wikiId,
     leaves: state.leaves,
     openIds: state.openIds,
@@ -41,6 +42,8 @@ function serializeWikiState(state: WikiState): string {
     settings: state.settings,
     lastSaved: state.lastSaved,
     users: state.users,
+    protection: state.protection,
+    autolock: state.autolock,
   };
   // Escape `</` to `<\/` so embedded user text can't terminate the script tag early.
   return JSON.stringify(persisted).replace(/<\/(script)/gi, '<\\/$1');
@@ -77,6 +80,7 @@ export class WikiPersistence {
   private channel: BroadcastChannel | null = null;
   public onRemoteUpdate: ((tier: Tier) => void) | null = null;
   public onRemoteUserUpdate: ((userId: UserID) => void) | null = null;
+  public onRemoteLock: (() => void) | null = null;
 
   constructor() {
     this.status.tier = this.detectTier();
@@ -131,7 +135,7 @@ export class WikiPersistence {
       const obj = JSON.parse(txt);
       if (!obj || typeof obj !== 'object') return null;
       if (!obj.wikiId || !Array.isArray(obj.leaves)) return null;
-      return migrateToV2(obj);
+      return migrateToV3(migrateToV2(obj));
     } catch {
       return null;
     }
@@ -141,7 +145,7 @@ export class WikiPersistence {
     try {
       const db = await this.db();
       const rec = await db.get(STORE_DRAFTS, `draft:${wikiId}`);
-      if (rec && rec.state) return migrateToV2(rec.state);
+      if (rec && rec.state) return migrateToV3(migrateToV2(rec.state));
       return null;
     } catch {
       return null;
@@ -436,7 +440,9 @@ export class WikiPersistence {
         (leaf.isJournal ? 'journal: true\n' : '') +
         '---\n\n';
       const safeName = (leaf.title || leaf.id).replace(/[^a-zA-Z0-9-_ ]/g, '_').slice(0, 80);
-      zip.file(`${safeName || leaf.id}.md`, fm + (leaf.body || ''));
+      const bodyText =
+        typeof leaf.body === 'string' ? leaf.body : ''; // encrypted bodies excluded
+      zip.file(`${safeName || leaf.id}.md`, fm + bodyText);
     }
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
@@ -470,6 +476,8 @@ export class WikiPersistence {
           this.onRemoteUpdate?.(this.status.tier);
         } else if (ev.data?.type === 'userUpdated' && ev.data?.userId) {
           this.onRemoteUserUpdate?.(ev.data.userId);
+        } else if (ev.data?.type === 'lock') {
+          this.onRemoteLock?.();
         }
       };
     } catch {
@@ -488,6 +496,14 @@ export class WikiPersistence {
   broadcastUserUpdate(userId: UserID) {
     try {
       this.channel?.postMessage({ type: 'userUpdated', userId });
+    } catch {
+      // ignore
+    }
+  }
+
+  broadcastLock(_wikiId: string) {
+    try {
+      this.channel?.postMessage({ type: 'lock' });
     } catch {
       // ignore
     }

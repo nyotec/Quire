@@ -13,11 +13,44 @@ import { UserOnboardingModal } from './components/UserOnboardingModal';
 import { AuthorChip } from './components/AuthorChip';
 import { TasksView } from './components/TasksView';
 import { ShortcutHelpDialog } from './components/ShortcutHelpDialog';
+import { LockOverlay } from './components/LockOverlay';
+import { PasswordSetupDialog } from './components/PasswordSetupDialog';
+import { ChangePasswordDialog } from './components/ChangePasswordDialog';
 import { buildIndex, tagCounts } from './lib/wikilinks';
 import { formatBytes, formatRel, uuid } from './lib/utils';
-import { ShortcutAction, useShortcuts } from './lib/hotkeys';
+import { ShortcutAction, setShortcutsSuppressed, useShortcuts } from './lib/hotkeys';
 import { findUser, leafCountsByAuthor, makeUser, migrateToV2 } from './lib/users';
-import type { AccentName, ActiveFilter, FontPair, ThemeName, UserID, WikiState } from './types';
+import { migrateToV3 } from './lib/migrate';
+import { ActivityMonitor } from './lib/activityMonitor';
+import {
+  clearDecryptionCache,
+  decryptedBodyCache,
+  setCryptoKey,
+  useLockState,
+} from './lib/lockState';
+import {
+  calibrateIterations,
+  decryptString,
+  deriveKey,
+  encryptString,
+  isEncryptedField,
+  makeVerifier,
+  randomSaltB64,
+  verifyPassword,
+} from './lib/crypto';
+import { detectFilenameFromLocation } from './lib/filename';
+import { computeDocumentTitle } from './lib/documentTitle';
+import type {
+  AccentName,
+  ActiveFilter,
+  AutolockConfig,
+  EncryptedField,
+  FontPair,
+  ProtectionConfig,
+  ThemeName,
+  UserID,
+  WikiState,
+} from './types';
 import { DEFAULT_SETTINGS } from './types';
 
 const ACCENTS: Record<AccentName, string> = {
@@ -128,8 +161,11 @@ export default function App() {
     saveStatus,
     remoteUpdateAvailable,
     needsIdentity,
+    protection,
+    autolock,
   } = store;
   const currentUser = useCurrentUser();
+  const lockState = useLockState();
 
   const [hydrated, setHydrated] = useState(false);
   const [restore, setRestore] = useState<RestorePromptState | null>(null);
@@ -139,8 +175,198 @@ export default function App() {
   const [tasksOpen, setTasksOpen] = useState(false);
   const [tasksFocused, setTasksFocused] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [changePwdOpen, setChangePwdOpen] = useState<null | 'change' | 'disable'>(null);
   const [shortcutHintShown, setShortcutHintShown] = useState(true);
   const [baselineLeafCount, setBaselineLeafCount] = useState<number | null>(null);
+
+  // ─── lock helpers (defined before useEffects so handlers can reference them)
+  const doLockNow = useCallback(() => {
+    if (lockState.locked) return;
+    const snapshot = {
+      paletteOpen: useWikiStore.getState().paletteOpen,
+      settingsOpen: useWikiStore.getState().settingsOpen,
+      tasksOpen,
+      editingId: useWikiStore.getState().editingId,
+      focusedId: useWikiStore.getState().focusedId,
+    };
+    // Wipe the key + cache via the lockState action
+    setCryptoKey(null);
+    clearDecryptionCache();
+    useLockState.getState().lock(snapshot);
+    // Broadcast to other tabs
+    persistence.broadcastLock?.(useWikiStore.getState().wikiId);
+  }, [lockState.locked, tasksOpen]);
+
+  const monitorRef = useState<{ m: ActivityMonitor | null }>(() => ({ m: null }))[0];
+
+  // ─── unlock (password mode) ───────────────────────────────────────────
+  const onUnlockPassword = useCallback(
+    async (password: string): Promise<boolean> => {
+      const cur = useWikiStore.getState().protection;
+      try {
+        const key = await verifyPassword(password, cur);
+        if (!key) {
+          useLockState.getState().recordFailure();
+          return false;
+        }
+        setCryptoKey(key);
+        useLockState.getState().unlock();
+        return true;
+      } catch (err) {
+        console.error('verify error', err);
+        useLockState.getState().recordFailure();
+        return false;
+      }
+    },
+    [],
+  );
+
+  const onCurtainDismiss = useCallback(() => {
+    useLockState.getState().unlock();
+  }, []);
+
+  // ─── enable / change / disable password ───────────────────────────────
+  const onEnablePassword = useCallback(() => setSetupOpen(true), []);
+  const onChangePassword = useCallback(() => setChangePwdOpen('change'), []);
+  const onDisablePassword = useCallback(() => setChangePwdOpen('disable'), []);
+
+  const commitSetup = useCallback(
+    async (r: {
+      password: string;
+      lockTitle: string;
+      lockSubtitle: string;
+      hideIdentifyingInfo: boolean;
+    }) => {
+      // Calibrate iterations on this device
+      const iterations = await calibrateIterations(500);
+      const salt = randomSaltB64();
+      const key = await deriveKey(r.password, salt, iterations);
+      const verifier = await makeVerifier(key);
+      // Encrypt every plaintext leaf body
+      const leavesNow = useWikiStore.getState().leaves;
+      const encryptedEntries: { id: string; body: EncryptedField }[] = [];
+      for (const l of leavesNow) {
+        const text = typeof l.body === 'string' ? l.body : '';
+        const enc = await encryptString(text || '', key);
+        encryptedEntries.push({ id: l.id, body: enc });
+        // Cache plaintext so the user keeps reading without a re-decrypt
+        if (text) decryptedBodyCache.set(l.id, text);
+      }
+      // Set the new key BEFORE writing the new state, so the auto-save can
+      // encrypt edits that arrive concurrently.
+      setCryptoKey(key);
+      // Build new protection config
+      const newProtection: ProtectionConfig = {
+        mode: 'password',
+        salt,
+        iterations,
+        hash: 'SHA-256',
+        verifier,
+        lockTitle: r.lockTitle || undefined,
+        lockSubtitle: r.lockSubtitle || undefined,
+        hideIdentifyingInfo: r.hideIdentifyingInfo,
+      };
+      useWikiStore.getState().setProtection(newProtection);
+      useWikiStore.getState().setLeafBodies(encryptedEntries);
+      useLockState.getState().setMode('password');
+      setSetupOpen(false);
+      // Force-save to flush new state to file
+      try {
+        await persistence.save(useWikiStore.getState().getPersistableState());
+      } catch (err) {
+        console.warn('save after enable failed', err);
+      }
+      // Lock immediately so the user re-verifies their password
+      doLockNow();
+    },
+    [doLockNow],
+  );
+
+  const commitChangePassword = useCallback(
+    async ({
+      currentPassword,
+      newPassword,
+    }: {
+      currentPassword: string;
+      newPassword?: string;
+    }) => {
+      const cur = useWikiStore.getState().protection;
+      const oldKey = await verifyPassword(currentPassword, cur);
+      if (!oldKey) throw new Error('Current password is incorrect.');
+
+      if (changePwdOpen === 'disable') {
+        // Decrypt every leaf body to plaintext, switch to curtain mode
+        const leavesNow = useWikiStore.getState().leaves;
+        const decryptedEntries: { id: string; body: string }[] = [];
+        for (const l of leavesNow) {
+          if (typeof l.body === 'string') {
+            decryptedEntries.push({ id: l.id, body: l.body });
+          } else if (isEncryptedField(l.body)) {
+            const pt = await decryptString(l.body, oldKey);
+            decryptedEntries.push({ id: l.id, body: pt });
+          }
+        }
+        setCryptoKey(null);
+        clearDecryptionCache();
+        useWikiStore
+          .getState()
+          .setProtection({
+            mode: 'curtain',
+            lockTitle: cur.lockTitle,
+            lockSubtitle: cur.lockSubtitle,
+            hideIdentifyingInfo: cur.hideIdentifyingInfo,
+          });
+        useWikiStore.getState().setLeafBodies(decryptedEntries);
+        useLockState.getState().setMode('curtain');
+        setChangePwdOpen(null);
+        await persistence.save(useWikiStore.getState().getPersistableState());
+        return;
+      }
+
+      // change → re-encrypt with new key
+      if (!newPassword) throw new Error('New password missing');
+      const iterations = await calibrateIterations(500);
+      const salt = randomSaltB64();
+      const newKey = await deriveKey(newPassword, salt, iterations);
+      const verifier = await makeVerifier(newKey);
+      const leavesNow = useWikiStore.getState().leaves;
+      const reEncrypted: { id: string; body: EncryptedField }[] = [];
+      for (const l of leavesNow) {
+        const pt =
+          typeof l.body === 'string'
+            ? l.body
+            : isEncryptedField(l.body)
+              ? await decryptString(l.body, oldKey)
+              : '';
+        reEncrypted.push({ id: l.id, body: await encryptString(pt, newKey) });
+      }
+      setCryptoKey(newKey);
+      clearDecryptionCache();
+      useWikiStore.getState().setProtection({
+        ...cur,
+        salt,
+        iterations,
+        hash: 'SHA-256',
+        verifier,
+      });
+      useWikiStore.getState().setLeafBodies(reEncrypted);
+      setChangePwdOpen(null);
+      await persistence.save(useWikiStore.getState().getPersistableState());
+      doLockNow();
+    },
+    [changePwdOpen, doLockNow],
+  );
+
+  const verifyCurrentPwd = useCallback(async (pwd: string) => {
+    const cur = useWikiStore.getState().protection;
+    try {
+      const k = await verifyPassword(pwd, cur);
+      return !!k;
+    } catch {
+      return false;
+    }
+  }, []);
 
   // ─── boot sequence ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -150,15 +376,26 @@ export default function App() {
       const fromHTML = persistence.loadFromHTML();
       let baseState: WikiState =
         fromHTML ??
-        migrateToV2({
-          schemaVersion: 1,
-          wikiId: uuid(),
-          leaves: [welcomeLeaf()],
-          openIds: ['welcome'],
-          focusedId: 'welcome',
-          settings: DEFAULT_SETTINGS,
-          lastSaved: new Date().toISOString(),
-        });
+        migrateToV3(
+          migrateToV2({
+            schemaVersion: 1,
+            wikiId: uuid(),
+            leaves: [welcomeLeaf()],
+            openIds: ['welcome'],
+            focusedId: 'welcome',
+            settings: DEFAULT_SETTINGS,
+            lastSaved: new Date().toISOString(),
+          }),
+        );
+
+      // If the file is password-protected, lock immediately *before* hydrate.
+      const detectedFilename =
+        detectFilenameFromLocation() || 'quire.html';
+      useLockState.getState().setFilename(detectedFilename);
+      useLockState.getState().setMode(baseState.protection.mode);
+      if (baseState.protection.mode === 'password') {
+        useLockState.getState().lock(null);
+      }
 
       const draft = await persistence.loadDraftFromIDB(baseState.wikiId);
       const useDraft =
@@ -213,6 +450,18 @@ export default function App() {
         // user update lands via the file save → the broadcast above already
         // covers reload prompts. This handler exists to support future extensions.
       };
+      persistence.onRemoteLock = () => {
+        if (useLockState.getState().locked) return;
+        setCryptoKey(null);
+        clearDecryptionCache();
+        useLockState.getState().lock(null);
+      };
+
+      // beforeunload: wipe key
+      window.addEventListener('beforeunload', () => {
+        setCryptoKey(null);
+        clearDecryptionCache();
+      });
 
       // Tier A: verify handle
       if (tier === 'A') {
@@ -246,6 +495,52 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ─── activity monitor lifecycle ────────────────────────────────────────
+  useEffect(() => {
+    if (!hydrated) return;
+    if (lockState.locked) return;
+    const onLock = () => {
+      doLockNow();
+    };
+    const m = new ActivityMonitor(
+      onLock,
+      () => useWikiStore.getState().autolock.inactivityTimeoutMs,
+      () => useWikiStore.getState().autolock.hiddenTimeoutMs,
+    );
+    monitorRef.m = m;
+    m.start();
+    return () => {
+      m.stop();
+      monitorRef.m = null;
+    };
+  }, [hydrated, lockState.locked, doLockNow]);
+
+  // Re-trigger the inactivity scheduler when the timeouts change
+  useEffect(() => {
+    monitorRef.m?.reschedule();
+  }, [autolock.inactivityTimeoutMs, autolock.hiddenTimeoutMs]);
+
+  // Suppress global shortcuts while locked
+  useEffect(() => {
+    setShortcutsSuppressed(lockState.locked);
+  }, [lockState.locked]);
+
+  // ─── document.title ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.title = computeDocumentTitle({
+      locked: lockState.locked,
+      hideIdentifyingInfo: !!protection.hideIdentifyingInfo,
+      lockTitle: protection.lockTitle,
+      filename: lockState.filename,
+    });
+  }, [
+    lockState.locked,
+    protection.hideIdentifyingInfo,
+    protection.lockTitle,
+    lockState.filename,
+  ]);
 
   // ─── first-time shortcut hint ──────────────────────────────────────────
   useEffect(() => {
@@ -539,6 +834,9 @@ export default function App() {
         case 'help.show':
           setHelpOpen(true);
           return true;
+        case 'lock.now':
+          doLockNow();
+          return true;
         case 'esc':
           // Modals register their own handlers ahead of this one.
           return false;
@@ -665,6 +963,8 @@ export default function App() {
               : ''
         }
         saveStatus={saveStatus}
+        protectionMode={protection.mode}
+        onLockNow={doLockNow}
       />
 
       <div className="q-shell">
@@ -774,6 +1074,7 @@ export default function App() {
                 onAuthorClick={onAuthorClick}
                 getUser={getUser}
                 onChange={(next) => store.updateLeaf(next)}
+                onChangeBody={(id, plaintext) => store.updateLeafBody(id, plaintext)}
                 onToggleEdit={() =>
                   store.setEditing(editingId === leaf.id ? null : leaf.id)
                 }
@@ -829,7 +1130,50 @@ export default function App() {
           store.setSettingsOpen(false);
           setHelpOpen(true);
         }}
+        protection={protection}
+        autolock={autolock}
+        filename={lockState.filename}
+        onSetAutolock={(a) => store.setAutolock(a)}
+        onSetProtection={(p) => store.setProtection(p)}
+        onLockNow={doLockNow}
+        onEnablePassword={onEnablePassword}
+        onChangePassword={onChangePassword}
+        onDisablePassword={onDisablePassword}
       />
+
+      {/* Password setup */}
+      <PasswordSetupDialog
+        open={setupOpen}
+        leafCount={leaves.length}
+        filename={lockState.filename}
+        lastSaved={saveStatus.lastSaved}
+        onCancel={() => setSetupOpen(false)}
+        onCommit={commitSetup}
+        onExportJSON={() =>
+          persistence.exportJSON(useWikiStore.getState().getPersistableState())
+        }
+      />
+      <ChangePasswordDialog
+        open={!!changePwdOpen}
+        variant={changePwdOpen === 'disable' ? 'disable' : 'change'}
+        onCancel={() => setChangePwdOpen(null)}
+        onVerifyCurrent={verifyCurrentPwd}
+        onCommit={commitChangePassword}
+      />
+
+      {/* Lock overlay — rendered above everything when locked */}
+      {lockState.locked && (
+        <LockOverlay
+          mode={protection.mode}
+          protection={protection}
+          filename={lockState.filename}
+          lastSaved={saveStatus.lastSaved}
+          failedAttempts={lockState.failedAttempts}
+          cooldownUntil={lockState.cooldownUntil}
+          onCurtainDismiss={onCurtainDismiss}
+          onPasswordSubmit={onUnlockPassword}
+        />
+      )}
 
       {showOnboarding && (
         <div className="q-onboard">

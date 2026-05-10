@@ -1,18 +1,27 @@
 import { create } from 'zustand';
 import type {
   ActiveFilter,
+  AutolockConfig,
   Leaf,
+  LeafBody,
   LeafID,
   WikiState,
   Settings,
   SaveStatus,
+  ProtectionConfig,
   User,
   UserID,
 } from '../types';
-import { DEFAULT_SETTINGS, LEGACY_USER_ID } from '../types';
+import {
+  DEFAULT_AUTOLOCK,
+  DEFAULT_PROTECTION,
+  DEFAULT_SETTINGS,
+  LEGACY_USER_ID,
+} from '../types';
 import { extractTags, newLeafId, uuid, debounce } from '../lib/utils';
 import { persistence } from './persistence';
 import { touchLeaf, findUser } from '../lib/users';
+import { decryptedBodyCache, encryptWithCurrentKey } from '../lib/lockState';
 
 interface UIState {
   paletteOpen: boolean;
@@ -37,7 +46,7 @@ export interface ToastItem {
 }
 
 export interface WikiStore extends UIState {
-  schemaVersion: 2;
+  schemaVersion: 3;
   wikiId: string;
   leaves: Leaf[];
   openIds: LeafID[];
@@ -46,9 +55,14 @@ export interface WikiStore extends UIState {
   lastSaved: string;
   users: User[];
   currentUserId: UserID | null;
+  protection: ProtectionConfig;
+  autolock: AutolockConfig;
 
   hydrate: (s: WikiState, currentUserId: UserID | null) => void;
   getPersistableState: () => WikiState;
+  setProtection: (p: ProtectionConfig) => void;
+  setAutolock: (a: AutolockConfig) => void;
+  setLeafBodies: (entries: { id: LeafID; body: LeafBody }[]) => void;
 
   // leaf ops
   openLeaf: (id: LeafID) => void;
@@ -59,6 +73,7 @@ export interface WikiStore extends UIState {
   setEditing: (id: LeafID | null) => void;
   newLeaf: (title?: string) => Leaf;
   updateLeaf: (next: Leaf) => void;
+  updateLeafBody: (id: LeafID, plaintext: string) => Promise<void>;
   deleteLeaf: (id: LeafID) => void;
   togglePin: (id: LeafID) => void;
 
@@ -87,7 +102,7 @@ export interface WikiStore extends UIState {
 
 function freshState(): WikiState {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     wikiId: uuid(),
     leaves: [],
     openIds: [],
@@ -95,6 +110,8 @@ function freshState(): WikiState {
     settings: DEFAULT_SETTINGS,
     lastSaved: new Date().toISOString(),
     users: [],
+    protection: { ...DEFAULT_PROTECTION },
+    autolock: { ...DEFAULT_AUTOLOCK },
   };
 }
 
@@ -145,7 +162,7 @@ export const useWikiStore = create<WikiStore>((set, get) => {
 
     hydrate: (s, currentUserId) => {
       set({
-        schemaVersion: 2,
+        schemaVersion: 3,
         wikiId: s.wikiId,
         leaves: s.leaves,
         openIds: s.openIds,
@@ -158,6 +175,8 @@ export const useWikiStore = create<WikiStore>((set, get) => {
         },
         lastSaved: s.lastSaved,
         users: s.users || [],
+        protection: { ...DEFAULT_PROTECTION, ...(s.protection || {}) },
+        autolock: { ...DEFAULT_AUTOLOCK, ...(s.autolock || {}) },
         currentUserId,
       });
     },
@@ -165,7 +184,7 @@ export const useWikiStore = create<WikiStore>((set, get) => {
     getPersistableState: () => {
       const s = get();
       return {
-        schemaVersion: 2,
+        schemaVersion: 3,
         wikiId: s.wikiId,
         leaves: s.leaves,
         openIds: s.openIds,
@@ -173,8 +192,23 @@ export const useWikiStore = create<WikiStore>((set, get) => {
         settings: s.settings,
         lastSaved: s.lastSaved,
         users: s.users,
+        protection: s.protection,
+        autolock: s.autolock,
       };
     },
+
+    setProtection: persistAfter((p: ProtectionConfig) => {
+      set({ protection: p });
+    }),
+    setAutolock: persistAfter((a: AutolockConfig) => {
+      set({ autolock: a });
+    }),
+    setLeafBodies: persistAfter((entries: { id: LeafID; body: LeafBody }[]) => {
+      const map = new Map(entries.map((e) => [e.id, e.body] as const));
+      set((s) => ({
+        leaves: s.leaves.map((l) => (map.has(l.id) ? { ...l, body: map.get(l.id)! } : l)),
+      }));
+    }),
 
     openLeaf: (id) => {
       set((s) => ({
@@ -271,20 +305,45 @@ export const useWikiStore = create<WikiStore>((set, get) => {
 
     updateLeaf: persistAfter((next: Leaf) => {
       const currentUserId = get().currentUserId || LEGACY_USER_ID;
+      // updateLeaf is for non-body changes (title, pin, isJournal, etc.).
+      // It does not re-extract tags — tags come from body and only change via
+      // updateLeafBody. We preserve the existing body shape (string or
+      // EncryptedField) untouched.
       set((s) => ({
-        leaves: s.leaves.map((l) =>
-          l.id === next.id
-            ? touchLeaf(
-                {
-                  ...next,
-                  tags: extractTags(next.body || ''),
-                },
-                currentUserId,
-              )
-            : l,
-        ),
+        leaves: s.leaves.map((l) => {
+          if (l.id !== next.id) return l;
+          const merged = { ...next, body: l.body, tags: l.tags };
+          return touchLeaf(merged, currentUserId);
+        }),
       }));
     }),
+
+    updateLeafBody: async (id: LeafID, plaintext: string) => {
+      const s = get();
+      const leaf = s.leaves.find((l) => l.id === id);
+      if (!leaf) return;
+      const currentUserId = s.currentUserId || LEGACY_USER_ID;
+      const tags = extractTags(plaintext);
+      decryptedBodyCache.set(id, plaintext);
+      let body: LeafBody = plaintext;
+      if (s.protection.mode === 'password') {
+        const enc = await encryptWithCurrentKey(plaintext);
+        if (!enc) {
+          // No key available (locked) — leave as-is to avoid corruption.
+          return;
+        }
+        body = enc;
+      }
+      set((cur) => ({
+        leaves: cur.leaves.map((l) =>
+          l.id === id ? touchLeaf({ ...l, body, tags }, currentUserId) : l,
+        ),
+      }));
+      if (persistence.detectTier() === 'B') {
+        persistence.setPendingChanges(get().saveStatus.pendingChanges + 1);
+      }
+      scheduleSave();
+    },
 
     deleteLeaf: persistAfter((id: LeafID) => {
       set((s) => ({

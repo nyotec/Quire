@@ -9,6 +9,7 @@ import {
   toggleTaskOnLine,
 } from '../lib/tasks';
 import { useWikiStore } from '../store/useWikiStore';
+import { bodyAsString } from '../lib/lockState';
 import { Icon } from './Icon';
 import { TaskRow } from './TaskRow';
 
@@ -40,7 +41,7 @@ export function TasksView({
   spineNumbers,
 }: Props) {
   const leaves = useWikiStore((s) => s.leaves);
-  const updateLeaf = useWikiStore((s) => s.updateLeaf);
+  const updateLeafBody = useWikiStore((s) => s.updateLeafBody);
 
   const [filter, setFilter] = useState<Filter>('open');
   const [requireDueDate, setRequireDueDate] = useState(false);
@@ -60,8 +61,8 @@ export function TasksView({
   const onToggle = (task: TaskInfo) => {
     const leaf = leaves.find((l) => l.id === task.leafId);
     if (!leaf) return;
-    const next = toggleTaskOnLine(leaf.body, task.sourceLine);
-    if (next !== null) updateLeaf({ ...leaf, body: next });
+    const next = toggleTaskOnLine(bodyAsString(leaf), task.sourceLine);
+    if (next !== null) updateLeafBody(leaf.id, next);
   };
 
   return (

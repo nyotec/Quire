@@ -7,6 +7,7 @@ import { AuthorChip } from './AuthorChip';
 import { allTasks, sortTasks } from '../lib/tasks';
 import { DueChip } from './DueChip';
 import { useShortcuts } from '../lib/hotkeys';
+import { bodyAsString } from '../lib/lockState';
 
 type CmdMode = 'cmd' | 'tag' | 'body' | 'find' | 'author' | 'task';
 
@@ -190,9 +191,10 @@ export function CommandPalette({
       if (!q) return [];
       return leaves
         .map<CmdResult | null>((l) => {
-          const idx = l.body.toLowerCase().indexOf(q);
+          const body = bodyAsString(l);
+          const idx = body.toLowerCase().indexOf(q);
           if (idx < 0) return null;
-          const snip = l.body.slice(Math.max(0, idx - 20), idx + 60).replace(/\n/g, ' ');
+          const snip = body.slice(Math.max(0, idx - 20), idx + 60).replace(/\n/g, ' ');
           return { id: l.id, label: l.title, hint: '…' + snip + '…', run: () => onOpenLeaf(l.id) };
         })
         .filter((x): x is CmdResult => !!x)

@@ -27,7 +27,8 @@ Quire is the spiritual descendant of TiddlyWiki: an entire personal wiki — Rea
 - **Tags & full-text search.** `#tags` extracted from prose, indexed, surfaced in the sidebar and command palette. Fuzzy title search with [Fuse.js](https://fusejs.io/), tag filter, full-body search, all reachable from `⌘K`.
 - **Three themes, two layouts.** Paper, Ink, Mono. River (horizontal cards) or Stack (vertical column). Density compact/regular/comfy. Settings drawer is a real Settings drawer, not a debug tool.
 - **Multi-user attribution.** Share the file with family or a small team. Each browser is a single resident user. Every leaf records its creator, last editor, and full contributor list. Author chips in the leaf header, a People sidebar, and an `@` mode in the palette let you see at a glance who wrote what.
-- **Tasks, in-place.** Markdown checkboxes (`- [ ] …`) actually toggle when clicked — the underlying markdown is edited surgically, not re-serialised. Optional `@YYYY-MM-DD` due dates render as chips with overdue colouring. `⌘⇧T` opens a system-wide Tasks view aggregated from every leaf.
+- **Tasks, in-place.** Markdown checkboxes (`- [ ] …`) actually toggle when clicked — the underlying markdown is edited surgically, not re-serialised. Optional `@YYYY-MM-DD` due dates render as chips with overdue colouring. `⌘⇧K` opens a system-wide Tasks view aggregated from every leaf.
+- **Privacy, two modes.** Auto-lock after inactivity (curtain mode, default — visual hiding only). Opt-in password mode encrypts every leaf body with AES-GCM derived from your password via PBKDF2; locking wipes the in-memory key. The lock screen shows configurable identifying info (lock title, filename, description) — or hides everything behind a single "Locked".
 - **Markdown, with care.** A purpose-built renderer that returns React nodes (not HTML strings) so wikilinks and tags carry click handlers. Headings, hr, fenced code, blockquote, mixed bullet/task lists, tables, bold/italic/inline-code, external links.
 - **Tiny.** ~360 KB total — React + ReactDOM + the entire app + your starting notes — all gzipped to about 110 KB.
 
@@ -95,6 +96,7 @@ Press `?` at any time to open the in-app shortcut help. The scheme deliberately 
 | `⌘S` / `Ctrl+S` | Save Wiki |
 | `⌘,` / `Ctrl+,` | Open settings |
 | `⌘⇧K` / `Ctrl+Shift+K` | Toggle Tasks view |
+| `⌘;` / `Ctrl+;` | Lock now |
 | `?` | Show keyboard shortcuts |
 | `Esc` | Close palette / drawer / dialog |
 
@@ -179,6 +181,34 @@ No Tailwind. No UI library. No router. No backend. No service worker.
 
 ---
 
+## Privacy
+
+Two modes, deliberately distinct.
+
+### Curtain mode (default)
+
+A full-screen overlay appears after configurable inactivity (default 5 min) or when the tab has been hidden for 30 s, or on `⌘;` / lock button. Pressing any key dismisses it. **This is visual hiding only — no encryption.** The on-disk file is unchanged; anyone with the file (or with DevTools open while the overlay is showing) can read everything. Useful for "don't let the person walking past my desk read my notes."
+
+### Password mode (opt-in)
+
+Encrypts every leaf body with AES-GCM (256-bit), key derived from your password via PBKDF2-SHA256 (~250 k iterations, calibrated per device on setup). Bodies are stored in the file as `{ iv, ct }` base64 blobs; titles, tags, timestamps, and user records remain plaintext. Locking wipes the in-memory key.
+
+Setup is a 4-step dialog that *requires* you to first export a JSON backup before you can commit — because **there is no recovery flow**. If you forget the password, the encrypted bodies are unrecoverable.
+
+### What this does NOT protect
+
+In plain language:
+
+- **Memory protection.** While unlocked, decrypted content is in JavaScript memory and visible via DevTools. Anyone with access to your unlocked browser can read everything.
+- **Keylogger protection.** None. If your machine is compromised, the password is captured.
+- **Metadata leak.** Leaf titles, tags, timestamps, user records, and the structure of the wiki are visible in the HTML file even when locked. Only bodies are encrypted.
+- **Lock screen identification is plaintext.** The lock title, description, filename, and "saved time" displayed on the lock screen are unencrypted by design — they're meant to help you identify which wiki you're unlocking. If even the wiki's *name* should be hidden, enable "Hide identifying info" in privacy settings.
+- **Forgotten password recovery.** None. Setup requires a JSON export precisely because there is no recovery mechanism.
+- **Side-channel attacks.** PBKDF2 timing on a malicious page next to the wiki could theoretically be measured. Not a realistic threat for personal use, but real for adversarial threat models.
+- **The HTML file's existence.** Even encrypted, the file's presence on disk reveals "this person has notes." Plausible-deniability is not in scope.
+
+If your threat model includes any of those, use a tool designed for it — Standard Notes, Cryptpad, age-encrypted markdown files in a Git repo, etc. Quire's password mode is for the realistic middle ground: shared laptops, casual privacy, "don't let my spouse read my journal," "protect this from a colleague who could briefly use my unlocked machine."
+
 ## Backups & exports
 
 In addition to `⌘S`, the Settings drawer (`⌘,`) gives you:
@@ -216,6 +246,7 @@ Issues and pull requests are welcome. A few notes:
 | v1.1 | Multi-user attribution: per-browser identity, author chips, People sidebar, `@` palette mode, schema migration |
 | v1.2 | Tasks: interactive checkboxes that surgically edit markdown, optional `@YYYY-MM-DD` due dates, system-wide Tasks view, `!` palette mode, sidebar Tasks row + Upcoming list |
 | v1.2.1 | Keyboard shortcut correction: avoids browser-reserved keys (`⌘W`, `⌘N`, `⌘T`, `⌘[`/`⌘]`), layout-independent matching via `event.code`, LIFO modal handler stack, in-app `?` help dialog |
+| v1.3 | Auto-lock with curtain mode + opt-in password mode (PBKDF2 + AES-GCM body encryption); lock screen with configurable identifying info; manual lock (`⌘;`); IDB drafts stay encrypted in password mode |
 
 The HTML data block carries `schemaVersion`. Old files auto-upgrade on load — you can always open a v1 file in a v1.1 build, never the other way around.
 

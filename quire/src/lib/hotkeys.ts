@@ -16,6 +16,7 @@ export type ShortcutAction =
   | 'settings.toggle'
   | 'tasks.toggle'
   | 'help.show'
+  | 'lock.now'
   | 'esc';
 
 interface Binding {
@@ -44,8 +45,15 @@ const BINDINGS: Record<ShortcutAction, Binding> = {
   'settings.toggle': { code: 'Comma',        key: null, primary: true,  inInput: true  },
   'tasks.toggle':    { code: 'KeyK',         key: null, primary: true,  shift: true, inInput: false },
   'help.show':       { code: null,           key: '?',  primary: false, inInput: false },
+  'lock.now':        { code: 'Semicolon',    key: null, primary: true,  inInput: true  },
   'esc':             { code: 'Escape',       key: null, primary: false, inInput: true  },
 };
+
+/** When set to true, only `esc` and the password input itself receive events. */
+let suppressed = false;
+export function setShortcutsSuppressed(v: boolean) {
+  suppressed = v;
+}
 
 function isInputFocused(): boolean {
   const el = document.activeElement as HTMLElement | null;
@@ -98,6 +106,8 @@ function onKeyDown(event: KeyboardEvent) {
     const b = BINDINGS[action];
     if (!matches(event, b)) continue;
     if (inInput && !b.inInput) continue;
+    // While suppressed (lock screen showing), only let `esc` reach handlers.
+    if (suppressed && action !== 'esc') return;
     for (const h of handlers) {
       if (h(action, event)) {
         event.preventDefault();
@@ -144,6 +154,7 @@ export function shortcutLabel(action: ShortcutAction): string {
       BracketLeft: '[',
       BracketRight: ']',
       Comma: ',',
+      Semicolon: ';',
       Tab: 'Tab',
       Escape: 'Esc',
     };
@@ -156,6 +167,7 @@ export function shortcutLabel(action: ShortcutAction): string {
       BracketLeft: '[',
       BracketRight: ']',
       Comma: ',',
+      Semicolon: ';',
       Tab: 'Tab',
       Escape: 'Esc',
     };
@@ -196,6 +208,8 @@ export function shortcutActionLabel(action: ShortcutAction): string {
       return 'Tasks view';
     case 'help.show':
       return 'Keyboard shortcuts help';
+    case 'lock.now':
+      return 'Lock now';
     case 'esc':
       return 'Close palette / drawer / dialog';
   }

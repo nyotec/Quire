@@ -59,7 +59,8 @@ export function touchLeaf(leaf: Leaf, currentUserId: UserID): Leaf {
 }
 
 /** Migrate a v1 (or undefined-version) WikiState into a v2 state. */
-export function migrateToV2(raw: any): WikiState {
+/** Returns a v2-shape object as `any` so the v3 migrator can extend it. */
+export function migrateToV2(raw: any): any {
   if (raw && raw.schemaVersion === 2 && Array.isArray(raw.users)) {
     // Already v2 — but defensive-fill any leaves that lack attribution.
     const users: User[] = raw.users;
@@ -89,7 +90,7 @@ export function migrateToV2(raw: any): WikiState {
   }));
   const legacy = legacyUser(leaves);
   return {
-    schemaVersion: 2,
+    schemaVersion: 2 as any,
     wikiId: raw?.wikiId || uuid(),
     leaves,
     openIds: raw?.openIds || [],
@@ -97,7 +98,7 @@ export function migrateToV2(raw: any): WikiState {
     settings: raw?.settings,
     lastSaved: raw?.lastSaved || new Date().toISOString(),
     users: [legacy],
-  } as WikiState;
+  } as any;
 }
 
 export function leafCountsByAuthor(

@@ -1,5 +1,6 @@
 import type { Leaf } from '../types';
 import { compareDates, dueStatus, isValidISODate } from './utils';
+import { bodyAsString } from './lockState';
 
 export const DUE_DATE_RX = /@(\d{4}-\d{2}-\d{2})\b/;
 const TASK_LINE_RX = /^\s*[-*]\s+\[([ xX])\]\s+(.*)$/;
@@ -36,7 +37,7 @@ export function toggleTaskOnLine(body: string, lineNum: number): string | null {
 /** Extract every task in a leaf as a TaskInfo. Skips fenced code blocks. */
 export function extractTasks(leaf: Leaf): TaskInfo[] {
   const tasks: TaskInfo[] = [];
-  const lines = leaf.body.split('\n');
+  const lines = bodyAsString(leaf).split('\n');
   let inFence = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];

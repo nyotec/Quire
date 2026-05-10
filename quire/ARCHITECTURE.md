@@ -207,6 +207,55 @@ non-button `<input>`, and `contenteditable` elements. Each binding has an
 `leaf.move*`, `tasks.toggle`, `?`, and `Tab` do not, so they don't conflict
 with regular text input.
 
+## Privacy & encryption (v1.3)
+
+Two layered modes: curtain (visual only) and password (real encryption).
+
+**Curtain mode** is the default. The app renders `LockOverlay` over the main DOM
+when an `ActivityMonitor` (in `src/lib/activityMonitor.ts`) detects inactivity
+or hidden-tab timeout. No state changes; React doesn't unmount; on dismiss,
+underlying state and scroll positions are preserved automatically. Underlying
+app gets `aria-hidden` so screen readers see only the overlay.
+
+**Password mode** encrypts each `Leaf.body` as `EncryptedField = { v, iv, ct }`
+using AES-GCM (256-bit). The key is derived from the user's password via
+PBKDF2-SHA256 with `iterations` calibrated per device on setup (target ~500 ms
+unlock; clamped to 100k–1M). The salt and iteration count travel in the file
+under `state.protection`. A *verifier* — `quire-v1-verifier` encrypted with the
+key — is stored in `state.protection.verifier`; we decrypt it on unlock to
+prove the password is correct without touching any leaf.
+
+The `CryptoKey` is held in a tiny module-level ref (`cryptoKeyRef`) outside
+the Zustand store so it never serializes. Decrypted leaf bodies are kept in a
+`Map<LeafID, string>` (`decryptedBodyCache`) — populated lazily by the leaf
+renderer via `bodyAsString(leaf)`. On lock (`ActivityMonitor` fire / manual /
+broadcast / `beforeunload`), both `cryptoKeyRef` and the cache are wiped.
+
+The boot sequence (in `App.tsx`) for password-protected files:
+
+1. Parse the embedded `<script id="quire-data">`.
+2. If `protection.mode === 'password'`, set `lockState.locked = true`
+   *before* hydrate so no plaintext rendering ever happens.
+3. Paint the `LockOverlay` using only the unencrypted plaintext fields:
+   `lockTitle`, `lockSubtitle`, `hideIdentifyingInfo`, plus the detected
+   filename and `state.lastSaved`. None of this requires the key.
+4. User submits password → `verifyPassword(password, protection)` runs PBKDF2,
+   tries to decrypt the verifier. On success, key is cached and lock dismisses.
+5. From here on, leaves decrypt lazily as the user views them.
+
+The IndexedDB draft store holds the same shape as the file (encrypted bodies in
+password mode). No additional wrapper layer is needed — the bodies are already
+ciphertext when serialized to IDB. On crash recovery, drafts decrypt only after
+the user unlocks.
+
+Cross-tab coordination: the existing `BroadcastChannel('quire:{wikiId}')` is
+extended with a `lock` message. Locking in tab A broadcasts; tab B locks
+itself. Each tab tracks its own activity monitor and unlocks independently.
+
+Schema migration v2 → v3 is forward-only and adds `protection` (curtain mode
+default) and `autolock` (5-minute / 30-second defaults). Existing v1.2 files
+open in v1.3 with no behavior change beyond the new auto-lock.
+
 ## Tasks (v1.2)
 
 Tasks are not a separate noun in the data model. They are a *property of lines*

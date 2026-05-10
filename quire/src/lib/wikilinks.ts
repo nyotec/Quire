@@ -1,5 +1,6 @@
 import type { Leaf, LeafID, BacklinkRef } from '../types';
 import { extractWikilinks } from './utils';
+import { bodyAsString } from './lockState';
 
 export interface WikiIndex {
   byId: Map<LeafID, Leaf>;
@@ -18,7 +19,8 @@ export function buildIndex(leaves: Leaf[]): WikiIndex {
   const forward = new Map<LeafID, LeafID[]>();
   const back = new Map<LeafID, BacklinkRef[]>();
   for (const l of leaves) {
-    const ts = extractWikilinks(l.body);
+    const body = bodyAsString(l);
+    const ts = extractWikilinks(body);
     forward.set(l.id, []);
     for (const t of ts) {
       const tgt = byTitle.get(t.toLowerCase());
@@ -27,7 +29,7 @@ export function buildIndex(leaves: Leaf[]): WikiIndex {
         if (!back.has(tgt.id)) back.set(tgt.id, []);
         const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const rx = new RegExp('([^.\n]*\\[\\[' + escaped + '\\]\\][^.\n]*)', 'i');
-        const m = l.body.match(rx);
+        const m = body.match(rx);
         const snippet = (m ? m[1] : '').trim().replace(/\s+/g, ' ').slice(0, 120);
         back.get(tgt.id)!.push({ id: l.id, title: l.title, snippet, authorId: l.authorId });
       }

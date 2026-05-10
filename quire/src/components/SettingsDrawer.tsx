@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react';
-import type { Settings, AccentName, User, UserID } from '../types';
+import type {
+  Settings,
+  AccentName,
+  AutolockConfig,
+  ProtectionConfig,
+  User,
+  UserID,
+} from '../types';
 import { Icon } from './Icon';
 import { formatRel } from '../lib/utils';
 import { AuthorChip } from './AuthorChip';
 import { USER_COLORS } from '../lib/userColors';
 import { deriveInitials } from '../lib/users';
-import { useShortcuts } from '../lib/hotkeys';
+import { useShortcuts, shortcutLabel } from '../lib/hotkeys';
+import { LockScreenPreview } from './LockScreenPreview';
 
 const ACCENT_HEX: Record<AccentName, string> = {
   ochre: '#b8862e',
@@ -35,6 +43,16 @@ interface DrawerProps {
   authoredCount: number;
   onUpdateUser: (userId: UserID, patch: Partial<User>) => void;
   onShowShortcuts: () => void;
+  // Privacy
+  protection: ProtectionConfig;
+  autolock: AutolockConfig;
+  filename: string | null;
+  onSetAutolock: (a: AutolockConfig) => void;
+  onSetProtection: (p: ProtectionConfig) => void;
+  onLockNow: () => void;
+  onEnablePassword: () => void;
+  onChangePassword: () => void;
+  onDisablePassword: () => void;
 }
 
 export function SettingsDrawer({
@@ -57,6 +75,15 @@ export function SettingsDrawer({
   authoredCount,
   onUpdateUser,
   onShowShortcuts,
+  protection,
+  autolock,
+  filename,
+  onSetAutolock,
+  onSetProtection,
+  onLockNow,
+  onEnablePassword,
+  onChangePassword,
+  onDisablePassword,
 }: DrawerProps) {
   useShortcuts((action) => {
     if (!open) return false;
@@ -206,6 +233,19 @@ export function SettingsDrawer({
                 : 'not active'}
             </div>
           </Section>
+
+          <PrivacySection
+            protection={protection}
+            autolock={autolock}
+            filename={filename}
+            lastSaved={lastSaved}
+            onSetAutolock={onSetAutolock}
+            onSetProtection={onSetProtection}
+            onLockNow={onLockNow}
+            onEnablePassword={onEnablePassword}
+            onChangePassword={onChangePassword}
+            onDisablePassword={onDisablePassword}
+          />
 
           <Section label="Plugins">
             {Object.entries(settings.plugins).map(([id, on]) => (
@@ -431,6 +471,183 @@ function IdentitySection({
         Your identity is remembered by this browser only. If you open this file on another
         device, you'll be asked to identify yourself there too.
       </div>
+    </div>
+  );
+}
+
+function PrivacySection({
+  protection,
+  autolock,
+  filename,
+  lastSaved,
+  onSetAutolock,
+  onSetProtection,
+  onLockNow,
+  onEnablePassword,
+  onChangePassword,
+  onDisablePassword,
+}: {
+  protection: ProtectionConfig;
+  autolock: AutolockConfig;
+  filename: string | null;
+  lastSaved: string | null;
+  onSetAutolock: (a: AutolockConfig) => void;
+  onSetProtection: (p: ProtectionConfig) => void;
+  onLockNow: () => void;
+  onEnablePassword: () => void;
+  onChangePassword: () => void;
+  onDisablePassword: () => void;
+}) {
+  // Local debounced state for the text fields so we don't write per keystroke
+  const [lockTitle, setLockTitle] = useState(protection.lockTitle || '');
+  const [lockSubtitle, setLockSubtitle] = useState(protection.lockSubtitle || '');
+  useEffect(() => setLockTitle(protection.lockTitle || ''), [protection.lockTitle]);
+  useEffect(
+    () => setLockSubtitle(protection.lockSubtitle || ''),
+    [protection.lockSubtitle],
+  );
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (
+        (protection.lockTitle || '') !== lockTitle ||
+        (protection.lockSubtitle || '') !== lockSubtitle
+      ) {
+        onSetProtection({
+          ...protection,
+          lockTitle: lockTitle || undefined,
+          lockSubtitle: lockSubtitle || undefined,
+        });
+      }
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockTitle, lockSubtitle]);
+
+  const inactivityOptions: { label: string; ms: number }[] = [
+    { label: 'Off', ms: 0 },
+    { label: '1 min', ms: 60_000 },
+    { label: '5 min', ms: 5 * 60_000 },
+    { label: '15 min', ms: 15 * 60_000 },
+    { label: '30 min', ms: 30 * 60_000 },
+  ];
+  const hiddenOptions: { label: string; ms: number }[] = [
+    { label: 'Off', ms: 0 },
+    { label: '10s', ms: 10_000 },
+    { label: '30s', ms: 30_000 },
+    { label: '2 min', ms: 120_000 },
+    { label: '10 min', ms: 600_000 },
+  ];
+
+  return (
+    <div className="q-drawer-sect">
+      <div className="q-drawer-sect-h">Privacy</div>
+
+      <Row label="Auto-lock">
+        <select
+          className="q-priv-select"
+          value={autolock.inactivityTimeoutMs}
+          onChange={(e) =>
+            onSetAutolock({ ...autolock, inactivityTimeoutMs: Number(e.target.value) })
+          }
+        >
+          {inactivityOptions.map((o) => (
+            <option key={o.label} value={o.ms}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </Row>
+      <Row label="Tab hidden">
+        <select
+          className="q-priv-select"
+          value={autolock.hiddenTimeoutMs}
+          onChange={(e) =>
+            onSetAutolock({ ...autolock, hiddenTimeoutMs: Number(e.target.value) })
+          }
+        >
+          {hiddenOptions.map((o) => (
+            <option key={o.label} value={o.ms}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </Row>
+
+      <div className="q-drawer-sect-h" style={{ marginTop: 6 }}>
+        Lock screen identification
+      </div>
+      <label className="q-onboard-field">
+        <span>Lock title</span>
+        <input
+          type="text"
+          value={lockTitle}
+          onChange={(e) => setLockTitle(e.target.value)}
+          placeholder="e.g. Personal Journal"
+          disabled={!!protection.hideIdentifyingInfo}
+        />
+      </label>
+      <label className="q-onboard-field" style={{ marginTop: 8 }}>
+        <span>Description</span>
+        <input
+          type="text"
+          value={lockSubtitle}
+          onChange={(e) => setLockSubtitle(e.target.value)}
+          placeholder="e.g. Started Jan 2024"
+          disabled={!!protection.hideIdentifyingInfo}
+        />
+      </label>
+      <Row label="Hide identifying info">
+        <Toggle
+          value={!!protection.hideIdentifyingInfo}
+          onChange={(v) => onSetProtection({ ...protection, hideIdentifyingInfo: v })}
+        />
+      </Row>
+      {protection.hideIdentifyingInfo && (
+        <div className="q-drawer-info">Saved but hidden on lock screen.</div>
+      )}
+
+      <div className="q-drawer-info" style={{ marginTop: 6 }}>
+        Preview:
+      </div>
+      <LockScreenPreview
+        mode={protection.mode}
+        protection={protection}
+        filename={filename}
+        lastSaved={lastSaved}
+      />
+
+      <div className="q-priv-status">
+        Status:{' '}
+        {protection.mode === 'password'
+          ? 'Password mode — leaves encrypted with AES-GCM'
+          : 'Curtain mode (visual hiding only)'}
+      </div>
+
+      {protection.mode === 'password' ? (
+        <>
+          <div className="q-drawer-info">
+            Key derivation: PBKDF2 / {protection.iterations?.toLocaleString() ?? '?'}{' '}
+            iterations
+          </div>
+          <button className="q-drawer-btn" onClick={onChangePassword}>
+            <Icon name="key" size={11} /> Change password
+          </button>
+          <button className="q-drawer-btn" onClick={onDisablePassword}>
+            <Icon name="unlock" size={11} /> Disable password protection
+          </button>
+        </>
+      ) : (
+        <button className="q-drawer-btn" onClick={onEnablePassword}>
+          <Icon name="key" size={11} /> Enable password protection
+        </button>
+      )}
+
+      <div className="q-drawer-info" style={{ marginTop: 6 }}>
+        Manual lock: {shortcutLabel('lock.now')}
+      </div>
+      <button className="q-drawer-btn" onClick={onLockNow}>
+        <Icon name="lock" size={11} /> Lock now
+      </button>
     </div>
   );
 }
