@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import type { Leaf, LeafID, User, UserID } from '../types';
+import type { Folder, FolderID, Leaf, LeafID, User, UserID } from '../types';
 import { Icon } from './Icon';
 import { formatRel } from '../lib/utils';
 import { makeFuse } from '../lib/search';
@@ -8,8 +8,9 @@ import { allTasks, sortTasks } from '../lib/tasks';
 import { DueChip } from './DueChip';
 import { useShortcuts } from '../lib/hotkeys';
 import { bodyAsString } from '../lib/lockState';
+import { leavesInFolder as leavesInFolderHelper } from '../lib/folders';
 
-type CmdMode = 'cmd' | 'tag' | 'body' | 'find' | 'author' | 'task';
+type CmdMode = 'cmd' | 'tag' | 'body' | 'find' | 'author' | 'task' | 'folder';
 
 interface CmdResult {
   id: string;
@@ -39,6 +40,8 @@ interface PaletteProps {
   onNew: (title?: string) => void;
   onCommand: (cmd: PaletteCommand) => void;
   onAuthorFilter: (id: UserID) => void;
+  folders: Folder[];
+  onFolderFilter: (id: FolderID) => void;
 }
 
 export function CommandPalette({
@@ -52,6 +55,8 @@ export function CommandPalette({
   onNew,
   onCommand,
   onAuthorFilter,
+  folders,
+  onFolderFilter,
 }: PaletteProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [sel, setSel] = useState(0);
@@ -87,9 +92,11 @@ export function CommandPalette({
         ? 'author'
         : query.startsWith('!')
           ? 'task'
-          : query.startsWith('/')
-            ? 'body'
-            : 'find';
+          : query.startsWith(':')
+            ? 'folder'
+            : query.startsWith('/')
+              ? 'body'
+              : 'find';
 
   const userById = useMemo(() => new Map(users.map((u) => [u.id, u] as const)), [users]);
   const userCounts = useMemo(() => {
@@ -101,7 +108,7 @@ export function CommandPalette({
   const tasksAll = useMemo(() => allTasks(leaves), [leaves]);
 
   const results: CmdResult[] = useMemo(() => {
-    const q = query.replace(/^[>#@!/]/, '').trim().toLowerCase();
+    const q = query.replace(/^[>#@!:/]/, '').trim().toLowerCase();
     if (mode === 'cmd') {
       const cmds: CmdResult[] = [
         { id: 'cmd:new', label: 'New leaf', hint: '⌘N', run: () => onNew() },
@@ -187,6 +194,34 @@ export function CommandPalette({
         run: () => onOpenLeaf(t.leafId),
       }));
     }
+    if (mode === 'folder') {
+      const matched = folders.filter((f) =>
+        !q || f.name.toLowerCase().includes(q),
+      );
+      // sort by leaf count desc (deep)
+      const counts = new Map<FolderID, number>();
+      for (const f of folders) {
+        counts.set(
+          f.id,
+          leavesInFolderHelper(leaves, folders, f.id, true).length,
+        );
+      }
+      return matched
+        .slice()
+        .sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0))
+        .slice(0, 16)
+        .map<CmdResult>((f) => ({
+          id: 'folder:' + f.id,
+          label: (
+            <span>
+              <span style={{ marginRight: 6 }}>{f.protection ? '🔒' : f.icon || '📁'}</span>
+              {f.protection?.hideName ? 'Locked' : f.name}
+            </span>
+          ),
+          hint: `${counts.get(f.id) || 0} leaves`,
+          run: () => onFolderFilter(f.id),
+        }));
+    }
     if (mode === 'body') {
       if (!q) return [];
       return leaves
@@ -216,7 +251,7 @@ export function CommandPalette({
       hint: item.tags.slice(0, 2).map((t) => '#' + t).join(' '),
       run: () => onOpenLeaf(item.id),
     }));
-  }, [query, mode, leaves, fuse, onOpenLeaf, onNew, onCommand]);
+  }, [query, mode, leaves, folders, fuse, onOpenLeaf, onNew, onCommand, onFolderFilter, onAuthorFilter, userById, userCounts, users, tasksAll]);
 
   useEffect(() => {
     setSel((s) => Math.min(s, Math.max(0, results.length - 1)));
@@ -237,7 +272,7 @@ export function CommandPalette({
         results[sel].run();
         onClose();
       } else if (query.trim()) {
-        onNew(query.replace(/^[>#@!/]/, '').trim());
+        onNew(query.replace(/^[>#@!:/]/, '').trim());
         onClose();
       }
     } else if (e.key === 'Escape') {
@@ -268,7 +303,7 @@ export function CommandPalette({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKey}
-            placeholder="Type to find · > command · # tag · @ author · ! task · / search bodies"
+            placeholder="Type to find · > command · # tag · @ author · : folder · ! task · / search bodies"
           />
           <span className="q-palette-mode">{mode}</span>
         </div>
@@ -292,7 +327,7 @@ export function CommandPalette({
               <span>No matches.</span>
               <kbd>Enter</kbd>
               <span>
-                to create "<b>{query.replace(/^[>#@!/]/, '').trim() || 'Untitled'}</b>"
+                to create "<b>{query.replace(/^[>#@!:/]/, '').trim() || 'Untitled'}</b>"
               </span>
             </div>
           )}

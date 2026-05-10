@@ -10,6 +10,7 @@ import {
 } from '../lib/tasks';
 import { useWikiStore } from '../store/useWikiStore';
 import { bodyAsString } from '../lib/lockState';
+import { isLeafAccessible } from '../lib/folderCrypto';
 import { Icon } from './Icon';
 import { TaskRow } from './TaskRow';
 
@@ -47,7 +48,13 @@ export function TasksView({
   const [requireDueDate, setRequireDueDate] = useState(false);
   const [sort, setSort] = useState<TaskSort>('due');
 
-  const tasks = useMemo(() => allTasks(leaves), [leaves]);
+  const folders = useWikiStore((s) => s.folders);
+  const visibleLeaves = useMemo(
+    () => leaves.filter((l) => isLeafAccessible(folders, l)),
+    [leaves, folders],
+  );
+  const lockedCount = leaves.length - visibleLeaves.length;
+  const tasks = useMemo(() => allTasks(visibleLeaves), [visibleLeaves]);
   const counts = useMemo(() => computeCounts(tasks), [tasks]);
 
   const visible = useMemo(() => {
@@ -89,6 +96,12 @@ export function TasksView({
       </header>
 
       <div className="q-leaf-body">
+        {lockedCount > 0 && (
+          <div className="q-tasks-locked-banner">
+            🔒 {lockedCount} {lockedCount === 1 ? 'leaf is' : 'leaves are'} in
+            locked folders. Tasks from those leaves are hidden until you unlock.
+          </div>
+        )}
         <div className="q-tasks-controls">
           <div className="q-tasks-seg">
             {(['open', 'done', 'all'] as Filter[]).map((f) => (

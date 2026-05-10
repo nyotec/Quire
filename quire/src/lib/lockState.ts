@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { LeafID, ProtectionMode } from '../types';
+import type { FolderID, LeafID, ProtectionMode } from '../types';
 import { decryptString, encryptString, isEncryptedField } from './crypto';
 import type { Leaf, EncryptedField } from '../types';
 
@@ -102,11 +102,53 @@ export function getCryptoKey(): CryptoKey | null {
   return cryptoKeyRef.key;
 }
 
+/**
+ * Per-folder unlocked keys, indexed by FolderID. Held outside the zustand
+ * store so the CryptoKey objects don't serialize.  Use the public helpers
+ * (set/clear/has/getFolderKey) so consumers can subscribe via the bumper.
+ */
+export const folderKeyRef = new Map<FolderID, CryptoKey>();
+
+/**
+ * Bumped whenever folder lock state changes.  Components that depend on
+ * folder lock visibility subscribe via `useFolderLockTick` which reads this.
+ */
+let folderTickListeners = new Set<() => void>();
+export function subscribeFolderTick(fn: () => void): () => void {
+  folderTickListeners.add(fn);
+  return () => {
+    folderTickListeners.delete(fn);
+  };
+}
+function bumpFolderTick() {
+  for (const fn of folderTickListeners) fn();
+}
+
+export function setFolderKey(id: FolderID, key: CryptoKey) {
+  folderKeyRef.set(id, key);
+  bumpFolderTick();
+}
+export function clearFolderKey(id: FolderID) {
+  folderKeyRef.delete(id);
+  bumpFolderTick();
+}
+export function clearAllFolderKeys() {
+  folderKeyRef.clear();
+  bumpFolderTick();
+}
+export function isFolderUnlocked(id: FolderID): boolean {
+  return folderKeyRef.has(id);
+}
+export function getFolderKey(id: FolderID): CryptoKey | undefined {
+  return folderKeyRef.get(id);
+}
+
 /** Per-leaf decrypted-body cache. Cleared on lock. */
 export const decryptedBodyCache: Map<LeafID, string> = new Map();
 
 export function clearDecryptionCache() {
   decryptedBodyCache.clear();
+  bumpFolderTick();
 }
 
 /** Synchronously read a leaf body if cached, else trigger decrypt and return null. */

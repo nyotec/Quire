@@ -250,6 +250,40 @@ Toggle sidebar / backlinks / spine numbers individually. All settings live in `W
 
 **Available since**: v1
 
+### Folders (new in v1.5)
+
+#### Nested folder tree
+
+A "Folders" section in the sidebar shows a collapsible tree of folders. Each leaf lives in at most one folder (`folderId`); the root is a virtual "All notes" entry. Folder names within a parent must be unique; duplicates auto-suffix with `(2)`. Click a folder to filter the river to its contents; toggle "Include sub-folders" in the filter bar.
+
+**Available since**: v1.5
+
+#### Folder context menu
+
+Right-click any folder (or use the ⋯ button) for rename / move / set icon / encrypt / change password / disable encryption / lock now / delete. Delete prompts you to choose **orphan** (leaves become unfiled, sub-folders move to root) or **cascade** (delete everything inside).
+
+**Available since**: v1.5
+
+#### Per-folder encryption
+
+Each folder can have its own password, independent of the wiki master password. Leaf bodies are encrypted with AES-GCM derived via PBKDF2-SHA256 from that folder's password. The 4-step setup dialog warns you, gates progress on a JSON export, lets you pick whether the folder name and leaf count are visible while locked, and shows a confirmation preview before committing.
+
+When folders nest, encryption follows the **closest enclosing protected ancestor**: a leaf is encrypted with whichever protected folder is nearest above it in the tree, and inner protected sub-folders supersede outer ones for their subtree.
+
+**Available since**: v1.5
+
+#### Folder unlock placeholder
+
+Clicking into a locked folder (or trying to follow a wikilink to a leaf inside one) drops a leaf-shaped placeholder into the river with a password prompt. Unlock to reveal the contents; cancel to back out. Unlocked folders relock automatically when the auto-lock timer fires.
+
+**Available since**: v1.5
+
+#### Breadcrumbs
+
+Each leaf header shows its folder path above the title. Click any segment to filter the river to that folder.
+
+**Available since**: v1.5
+
 ### Mobile & tablet (new in v1.4)
 
 #### Responsive layouts
@@ -365,7 +399,7 @@ The shortcut scheme deliberately avoids browser-reserved keys (`⌘W`, `⌘N`, `
 | `?` | Show keyboard shortcuts |
 | `Esc` | Close palette / drawer / dialog |
 
-Inside the palette: `>` for commands, `#` for tags, `@` for authors, `!` for tasks, `/` for full-text body search.
+Inside the palette: `>` for commands, `#` for tags, `@` for authors, `:` for folders, `!` for tasks, `/` for full-text body search.
 
 **Troubleshooting**: if shortcuts don't work, check for browser extensions that intercept keyboard input (Vimium, Vimari, etc.) — disable them on `file://` URLs.
 
@@ -467,6 +501,7 @@ Issues and pull requests are welcome.
 - **v1.2.1** — keyboard shortcut correction: avoids browser-reserved keys (`⌘W`, `⌘N`, `⌘T`, `⌘[`/`⌘]`), layout-independent matching via `event.code`, LIFO modal handler stack, in-app `?` help dialog.
 - **v1.3** — auto-lock with curtain mode + opt-in password mode (PBKDF2 + AES-GCM body encryption); lock screen with configurable identifying info; manual lock (`⌘;`); IDB drafts stay encrypted in password mode.
 - **v1.4** — responsive design (phones, tablets), file size reduction (Preact + lz-string compression), comprehensive README.
+- **v1.5** — folders + per-folder encryption. Nested folder tree in the sidebar with right-click context menu, breadcrumbs in leaf headers, `:` palette mode for finding folders. Each folder can have its own password (independent of the v1.3 wiki master password); nested folders follow the closest-enclosing-protected-ancestor rule. Schema v3 → v4 migration is forward-only.
 
 ## License
 

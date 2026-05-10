@@ -53,6 +53,9 @@ interface DrawerProps {
   onEnablePassword: () => void;
   onChangePassword: () => void;
   onDisablePassword: () => void;
+  folders: import('../types').Folder[];
+  onChangeFolderPassword: (folder: import('../types').Folder) => void;
+  onDisableFolderProtection: (folder: import('../types').Folder) => void;
 }
 
 export function SettingsDrawer({
@@ -84,6 +87,9 @@ export function SettingsDrawer({
   onEnablePassword,
   onChangePassword,
   onDisablePassword,
+  folders,
+  onChangeFolderPassword,
+  onDisableFolderProtection,
 }: DrawerProps) {
   useShortcuts((action) => {
     if (!open) return false;
@@ -246,6 +252,57 @@ export function SettingsDrawer({
             onChangePassword={onChangePassword}
             onDisablePassword={onDisablePassword}
           />
+
+          <Section label="Folders">
+            <div className="q-drawer-info">Total folders · {folders.length}</div>
+            <div className="q-drawer-info">
+              Protected folders ·{' '}
+              {folders.filter((f) => !!f.protection).length}
+            </div>
+            {folders.filter((f) => !!f.protection).length > 0 && (
+              <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {folders
+                  .filter((f) => !!f.protection)
+                  .map((f) => (
+                    <div
+                      key={f.id}
+                      style={{
+                        padding: '6px 8px',
+                        border: '0.5px solid var(--q-line)',
+                        borderRadius: 6,
+                        fontSize: 12,
+                      }}
+                    >
+                      <div style={{ fontWeight: 500 }}>🔒 {f.name}</div>
+                      <div className="q-drawer-info" style={{ marginTop: 2 }}>
+                        Hide name ·{' '}
+                        {f.protection?.hideName ? 'yes' : 'no'} · Hide count ·{' '}
+                        {f.protection?.hideContents ? 'yes' : 'no'}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                        <button
+                          className="q-drawer-btn"
+                          style={{ width: 'auto', flex: 1 }}
+                          onClick={() => onChangeFolderPassword(f)}
+                        >
+                          <Icon name="key" size={11} /> Change password
+                        </button>
+                        <button
+                          className="q-drawer-btn"
+                          style={{ width: 'auto', flex: 1 }}
+                          onClick={() => onDisableFolderProtection(f)}
+                        >
+                          <Icon name="unlock" size={11} /> Disable
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+            <div className="q-drawer-info" style={{ marginTop: 6 }}>
+              Create and manage folders from the sidebar's Folders section.
+            </div>
+          </Section>
 
           <Section label="Plugins">
             {Object.entries(settings.plugins).map(([id, on]) => (

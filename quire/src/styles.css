@@ -1766,6 +1766,200 @@ kbd {
   margin: 8px 0 4px;
 }
 
+/* ─── folder tree (v1.5) ──────────────────────────────────────────── */
+.q-folder-tree { display: flex; flex-direction: column; padding: 0 4px 4px; }
+.q-folder-row {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--q-ink-2);
+  text-align: left;
+  width: 100%;
+  min-height: 32px;
+  position: relative;
+}
+.q-theme-mono .q-folder-row { border-radius: 0; }
+.q-folder-row:hover { background: var(--q-surface-2); color: var(--q-ink); }
+.q-folder-row.active {
+  background: color-mix(in oklch, var(--q-accent) 12%, var(--q-bg));
+  color: var(--q-ink);
+  font-weight: 500;
+}
+.q-folder-row.locked { color: var(--q-dim); }
+.q-folder-caret {
+  width: 12px;
+  text-align: center;
+  font-size: 9px;
+  color: var(--q-dim);
+  flex: 0 0 auto;
+}
+.q-folder-glyph { font-size: 14px; line-height: 1; flex: 0 0 auto; }
+.q-folder-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.q-folder-count {
+  font-family: var(--q-font-mono);
+  font-size: 10px;
+  color: var(--q-dim);
+  flex: 0 0 auto;
+}
+.q-folder-row-add,
+.q-folder-row-more {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--q-dim);
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity .12s;
+  flex: 0 0 auto;
+}
+.q-folder-row:hover .q-folder-row-add,
+.q-folder-row:hover .q-folder-row-more { opacity: 1; }
+.q-folder-row-add:hover,
+.q-folder-row-more:hover { background: var(--q-surface); color: var(--q-ink); }
+.q-folder-children { display: flex; flex-direction: column; }
+.q-folder-empty {
+  padding: 8px 12px;
+  font-size: 11.5px;
+  color: var(--q-dim);
+}
+
+/* ─── folder context menu ─────────────────────────────────────────── */
+.q-folder-menu {
+  position: fixed;
+  z-index: 200;
+  background: var(--q-surface);
+  border: 0.5px solid var(--q-line-2);
+  border-radius: 8px;
+  box-shadow: 0 16px 40px rgba(0,0,0,.18);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+}
+.q-theme-mono .q-folder-menu { border-radius: 0; border-width: 1.5px; border-color: var(--q-ink); }
+.q-folder-menu-item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 5px;
+  font-size: 12.5px;
+  color: var(--q-ink);
+  text-align: left;
+}
+.q-theme-mono .q-folder-menu-item { border-radius: 0; }
+.q-folder-menu-item:hover { background: var(--q-surface-2); }
+.q-folder-menu-item.destructive { color: var(--q-overdue); }
+.q-folder-menu-sep {
+  border-top: 0.5px solid var(--q-line);
+  margin: 4px 0;
+}
+
+/* ─── breadcrumbs ─────────────────────────────────────────────────── */
+.q-breadcrumbs {
+  font-size: 11px;
+  color: var(--q-dim);
+  font-family: var(--q-font-mono);
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-bottom: 4px;
+}
+.q-breadcrumbs-glyph { margin-right: 4px; }
+.q-breadcrumb-seg { display: inline-flex; align-items: center; }
+.q-breadcrumb-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--q-dim);
+  padding: 0 2px;
+  cursor: pointer;
+}
+.q-breadcrumb-btn:hover { color: var(--q-accent); text-decoration: underline; }
+.q-breadcrumb-sep { color: var(--q-line-2); }
+
+/* ─── folder unlock card ──────────────────────────────────────────── */
+.q-leaf-folder-unlock {
+  background: var(--q-surface);
+  text-align: center;
+}
+.q-folder-unlock-body {
+  padding: 36px 24px 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.q-folder-unlock-glyph {
+  width: 56px; height: 56px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--q-ink-2);
+}
+.q-folder-unlock-title {
+  font-family: var(--q-font-head);
+  font-size: 20px;
+  font-weight: 500;
+  margin: 0;
+  color: var(--q-ink);
+  letter-spacing: -0.01em;
+}
+.q-theme-mono .q-folder-unlock-title { font-family: var(--q-font-mono); }
+.q-folder-unlock-meta {
+  font-size: 12px;
+  color: var(--q-dim);
+  font-family: var(--q-font-mono);
+}
+.q-folder-unlock-hint {
+  font-size: 11px;
+  color: var(--q-dim);
+  font-family: var(--q-font-mono);
+}
+.q-folder-unlock-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* ─── tasks-view locked banner ────────────────────────────────────── */
+.q-tasks-locked-banner {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--q-overdue) 8%, transparent);
+  border: 0.5px solid color-mix(in oklch, var(--q-overdue) 30%, var(--q-line));
+  color: var(--q-ink-2);
+  font-size: 12px;
+}
+.q-theme-mono .q-tasks-locked-banner { border-radius: 0; }
+
+/* ─── locked leaf body placeholder ────────────────────────────────── */
+.q-md-locked { padding: 12px 0; }
+
 /* ─── responsive (v1.4) ──────────────────────────────────────────── */
 
 :root {

@@ -18,6 +18,29 @@ export interface EncryptedField {
 
 export type LeafBody = string | EncryptedField;
 
+export interface FolderProtection {
+  salt: string;
+  iterations: number;
+  hash: 'SHA-256';
+  verifier: EncryptedField;
+  hideContents: boolean; // suppress leaf count when locked
+  hideName: boolean; // replace folder name with "Locked" when locked
+}
+
+export type FolderID = string;
+
+export interface Folder {
+  id: FolderID;
+  name: string;
+  parentId: FolderID | null;
+  color?: string;
+  icon?: string; // single emoji or character
+  created: string;
+  protection?: FolderProtection;
+}
+
+export const FOLDER_VERIFIER_PLAINTEXT = 'quire-folder-v1-verifier';
+
 export interface Leaf {
   id: LeafID;
   title: string;
@@ -30,6 +53,7 @@ export interface Leaf {
   authorId: UserID;
   lastEditedBy: UserID;
   contributors: UserID[];
+  folderId?: FolderID | null;
 }
 
 export type ThemeName = 'paper' | 'ink' | 'mono';
@@ -78,7 +102,7 @@ export interface AutolockConfig {
 }
 
 export interface WikiState {
-  schemaVersion: 3;
+  schemaVersion: 4;
   wikiId: string;
   leaves: Leaf[];
   openIds: LeafID[];
@@ -88,6 +112,7 @@ export interface WikiState {
   users: User[];
   protection: ProtectionConfig;
   autolock: AutolockConfig;
+  folders: Folder[];
 }
 
 export const DEFAULT_AUTOLOCK: AutolockConfig = {
@@ -122,6 +147,7 @@ export interface BacklinkRef {
 export type ActiveFilter =
   | { type: 'tag'; value: string }
   | { type: 'author'; value: UserID }
+  | { type: 'folder'; value: FolderID; deep: boolean }
   | null;
 
 export const LEGACY_USER_ID: UserID = 'legacy';
