@@ -1766,13 +1766,197 @@ kbd {
   margin: 8px 0 4px;
 }
 
-/* ─── small viewport fallback ─────────────────────────────────────── */
-@media (max-width: 900px) {
-  .q-side { flex-basis: 220px; }
-  .q-top { grid-template-columns: auto 1fr auto; }
+/* ─── responsive (v1.4) ──────────────────────────────────────────── */
+
+:root {
+  --bp-mobile: 640px;
+  --bp-tablet: 1024px;
+  /* Use dynamic viewport height where supported (avoids the iOS keyboard
+     “100vh is bigger than the visible area” trap). */
+  --q-vh: 100vh;
+}
+@supports (height: 100dvh) {
+  :root { --q-vh: 100dvh; }
+}
+
+/* Hover styles only apply on devices that actually have hover. */
+@media (hover: none) {
+  .q-icon-btn:hover,
+  .q-icon-btn-sm:hover,
+  .q-tag-pill:hover,
+  .q-side-row:hover,
+  .q-people-row:hover,
+  .q-tasks-row:hover,
+  .q-leaf:hover { background: inherit; color: inherit; }
+}
+
+/* Touch-primary devices: enforce 44×44 minimum tap targets and disable
+   browser pull-to-refresh on the leaf body so accidental pulls don't reload. */
+@media (hover: none) and (pointer: coarse) {
+  .q-icon-btn { width: 44px; height: 44px; }
+  .q-icon-btn-sm { width: 36px; height: 36px; }
+  .q-leaf-handle {
+    width: 28px;
+    flex-basis: 28px;
+    touch-action: none;
+  }
+  .q-leaf-body { overscroll-behavior-y: contain; }
+}
+
+/* ─── tablet (portrait + landscape together) ────────────────────── */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .q-side { flex: 0 0 220px; }
   .q-brand-meta { display: none; }
 }
-@media (max-width: 700px) {
-  .q-side { display: none; }
+
+/* ─── mobile (≤ 640) ────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  /* Force stack layout and full-bleed leaves regardless of user setting */
+  .q-app .q-river-river {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .q-app .q-river { padding: 12px 12px 80px; }
+  .q-app .q-leaf {
+    width: 100%;
+    max-width: 100%;
+    flex-basis: auto;
+    max-height: none;
+  }
+  .q-app .q-leaf:not(:last-child) { margin-bottom: 14px; }
+
+  /* Top bar: hide center search column entirely; centred brand */
+  .q-top {
+    grid-template-columns: auto 1fr auto;
+    gap: 8px;
+    padding: 0 10px;
+    height: 50px;
+  }
   .q-top-c { display: none; }
+  .q-brand { gap: 6px; }
+  .q-brand-meta { display: none; }
+  .q-status-pill {
+    padding: 0 6px;
+    font-size: 0;
+    width: 26px;
+    overflow: hidden;
+  }
+  .q-status-pill .q-status-dot { margin: 0; }
+  .q-btn-primary {
+    padding: 0 9px;
+    font-size: 12px;
+  }
+  .q-btn-primary .q-kbd { display: none; }
+
+  /* Sidebar becomes a slide-in drawer */
+  .q-sidebar-drawer-scrim {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, .35);
+    z-index: 95;
+    animation: q-fade .12s ease-out;
+  }
+  .q-sidebar-drawer {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: 84vw;
+    max-width: 320px;
+    background: var(--q-bg-2);
+    border-right: 0.5px solid var(--q-line);
+    z-index: 96;
+    box-shadow: 16px 0 40px rgba(0, 0, 0, .14);
+    transform: translateX(0);
+    animation: q-slide-in .18s ease-out;
+    display: flex;
+    flex-direction: column;
+  }
+  .q-sidebar-drawer .q-side {
+    flex: 1;
+    border-right: 0;
+    background: transparent;
+  }
+  @keyframes q-slide-in {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .q-sidebar-drawer { animation: none; }
+    .q-sidebar-drawer-scrim { animation: none; }
+  }
+
+  /* Hamburger toggle visible only on mobile */
+  .q-hamburger { display: inline-flex; }
+  .q-back-btn { display: inline-flex; }
+
+  /* Settings drawer becomes full-screen on mobile */
+  .q-drawer {
+    width: 100vw;
+    max-width: 100vw;
+  }
+
+  /* Command palette becomes a full-screen sheet on mobile.
+     Input pinned to bottom, results above. */
+  .q-palette-scrim {
+    padding-top: 0;
+    align-items: stretch;
+  }
+  .q-palette {
+    width: 100vw;
+    max-width: 100vw;
+    height: var(--q-vh);
+    max-height: var(--q-vh);
+    border-radius: 0;
+    display: flex;
+    flex-direction: column-reverse;
+    border: 0;
+  }
+  .q-palette-row {
+    border-bottom: 0;
+    border-top: 0.5px solid var(--q-line);
+    padding: 14px 14px env(safe-area-inset-bottom, 14px);
+  }
+  .q-palette-list {
+    flex: 1;
+    max-height: none;
+  }
+  .q-palette-foot { display: none; }
+
+  /* Lock overlay sizing already centres; just ensure padding sits inside notches */
+  .q-lock {
+    padding: 24px 20px env(safe-area-inset-bottom, 24px);
+  }
+  .q-lock-input { width: min(280px, 90%); }
+
+  /* Modals fit better edge-to-edge on phones */
+  .q-modal { width: min(560px, 96vw); }
+  .q-pw-dialog { width: min(560px, 96vw); }
+  .q-shortcut-help { width: min(560px, 96vw); }
+  .q-shortcut-grid { grid-template-columns: 1fr; }
+
+  /* Tasks view filter bar: collapse the segmented controls onto two rows */
+  .q-tasks-controls { gap: 8px; }
+  .q-tasks-controls .q-tasks-seg {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Hide spine numbers (decorative; clutter on phones) */
+  .q-leaf-spine { display: none; }
+
+  /* Restore-prompt and help dialogs: tighter padding */
+  .q-modal { padding: 18px 18px 14px; }
+
+  /* Lock-screen preview takes less vertical room */
+  .q-lock-preview-wrap { width: 220px; }
 }
+
+/* Hide hamburger on desktop (default) */
+.q-hamburger { display: none; }
+.q-back-btn { display: none; }
+
+@media (max-width: 640px) {
+  .q-hamburger { display: inline-flex; }
+  .q-back-btn { display: inline-flex; }
+  .q-sidebar-toggle { display: none; }
+}
+

@@ -1,11 +1,25 @@
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
 import { viteSingleFile } from 'vite-plugin-singlefile';
+import preact from '@preact/preset-vite';
 
 export default defineConfig({
-  plugins: [react(), viteSingleFile()],
+  // Preact's preset wires its JSX runtime and aliases react / react-dom
+  // to preact/compat at build time.  Source code keeps importing from 'react'.
+  plugins: [preact(), viteSingleFile()],
+  resolve: {
+    alias: {
+      react: 'preact/compat',
+      'react-dom': 'preact/compat',
+      'react-dom/client': 'preact/compat/client',
+      'react/jsx-runtime': 'preact/jsx-runtime',
+      'react/jsx-dev-runtime': 'preact/jsx-runtime',
+    },
+  },
+  esbuild: {
+    drop: ['console', 'debugger'],
+  },
   build: {
-    target: 'es2020',
+    target: 'es2022',
     cssCodeSplit: false,
     assetsInlineLimit: 100000000,
     chunkSizeWarningLimit: 100000000,

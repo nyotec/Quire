@@ -16,6 +16,8 @@ import { ShortcutHelpDialog } from './components/ShortcutHelpDialog';
 import { LockOverlay } from './components/LockOverlay';
 import { PasswordSetupDialog } from './components/PasswordSetupDialog';
 import { ChangePasswordDialog } from './components/ChangePasswordDialog';
+import { SidebarDrawer } from './components/SidebarDrawer';
+import { useIsMobile } from './lib/useMediaQuery';
 import { buildIndex, tagCounts } from './lib/wikilinks';
 import { formatBytes, formatRel, uuid } from './lib/utils';
 import { ShortcutAction, setShortcutsSuppressed, useShortcuts } from './lib/hotkeys';
@@ -178,6 +180,9 @@ export default function App() {
   const [setupOpen, setSetupOpen] = useState(false);
   const [changePwdOpen, setChangePwdOpen] = useState<null | 'change' | 'disable'>(null);
   const [shortcutHintShown, setShortcutHintShown] = useState(true);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [navHistory, setNavHistory] = useState<string[]>([]);
+  const isMobile = useIsMobile();
   const [baselineLeafCount, setBaselineLeafCount] = useState<number | null>(null);
 
   // ─── lock helpers (defined before useEffects so handlers can reference them)
@@ -628,14 +633,45 @@ export default function App() {
   const onWikilink = useCallback(
     (target: string) => {
       const tgt = index.byTitle.get(target.toLowerCase());
+      if (isMobile) {
+        // Mobile: linear navigation. Replace the current leaf, push to history.
+        const cur = useWikiStore.getState().focusedId;
+        if (cur) setNavHistory((h) => [...h, cur]);
+        if (tgt) {
+          // Close all currently-open leaves except the new target's parent isn't relevant —
+          // simpler: replace `openIds` with just the target.
+          useWikiStore.setState((s) => ({
+            ...s,
+            openIds: [tgt.id],
+            focusedId: tgt.id,
+          }));
+        } else {
+          store.newLeaf(target);
+        }
+        return;
+      }
       if (tgt) {
         store.openLeaf(tgt.id);
       } else {
         store.newLeaf(target);
       }
     },
-    [index, store],
+    [index, store, isMobile],
   );
+
+  const goBack = useCallback(() => {
+    setNavHistory((h) => {
+      if (h.length === 0) return h;
+      const next = h.slice(0, -1);
+      const prev = h[h.length - 1];
+      useWikiStore.setState((s) => ({
+        ...s,
+        openIds: [prev],
+        focusedId: prev,
+      }));
+      return next;
+    });
+  }, []);
 
   const onTagClick = useCallback(
     (t: string) => {
@@ -965,33 +1001,85 @@ export default function App() {
         saveStatus={saveStatus}
         protectionMode={protection.mode}
         onLockNow={doLockNow}
+        onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
+        onBack={isMobile && navHistory.length > 0 ? goBack : null}
       />
 
       <div className="q-shell">
-        {settings.sidebar && (
-          <Sidebar
-            leaves={leaves}
-            openIds={openIds}
-            focusedId={focusedId}
-            onOpen={(id) => store.openLeaf(id)}
-            onJumpToday={() => todayId && store.openLeaf(todayId)}
-            todayId={todayId}
-            tags={tags}
-            activeFilter={activeFilter}
-            onTagClick={onTagClick}
-            onAuthorClick={onAuthorClick}
-            recent={recent}
-            fileSizeText={fileSizeText}
-            savedText={savedText}
-            people={people}
-            currentUserId={currentUserId}
-            onOpenTasks={() => {
-              setTasksOpen(true);
-              setTasksFocused(true);
-            }}
-            showOverdueBadge={settings.tasks.showOverdueBadge}
-          />
-        )}
+        {(() => {
+          // On mobile: render the sidebar inside a slide-in drawer regardless
+          // of `settings.sidebar` (which controls desktop visibility).
+          // On desktop / tablet: render inline iff `settings.sidebar` is true.
+          const sidebarEl = (
+            <Sidebar
+              leaves={leaves}
+              openIds={openIds}
+              focusedId={focusedId}
+              onOpen={(id) => {
+                if (isMobile) {
+                  // Replace open leaves with just the target; close drawer.
+                  const cur = useWikiStore.getState().focusedId;
+                  if (cur && cur !== id) setNavHistory((h) => [...h, cur]);
+                  useWikiStore.setState((s) => ({
+                    ...s,
+                    openIds: [id],
+                    focusedId: id,
+                  }));
+                  setMobileSidebarOpen(false);
+                } else {
+                  store.openLeaf(id);
+                }
+              }}
+              onJumpToday={() => {
+                if (todayId) {
+                  if (isMobile) {
+                    useWikiStore.setState((s) => ({
+                      ...s,
+                      openIds: [todayId],
+                      focusedId: todayId,
+                    }));
+                    setMobileSidebarOpen(false);
+                  } else {
+                    store.openLeaf(todayId);
+                  }
+                }
+              }}
+              todayId={todayId}
+              tags={tags}
+              activeFilter={activeFilter}
+              onTagClick={(t) => {
+                onTagClick(t);
+                if (isMobile) setMobileSidebarOpen(false);
+              }}
+              onAuthorClick={(id) => {
+                onAuthorClick(id);
+                if (isMobile) setMobileSidebarOpen(false);
+              }}
+              recent={recent}
+              fileSizeText={fileSizeText}
+              savedText={savedText}
+              people={people}
+              currentUserId={currentUserId}
+              onOpenTasks={() => {
+                setTasksOpen(true);
+                setTasksFocused(true);
+                if (isMobile) setMobileSidebarOpen(false);
+              }}
+              showOverdueBadge={settings.tasks.showOverdueBadge}
+            />
+          );
+          if (isMobile) {
+            return (
+              <SidebarDrawer
+                open={mobileSidebarOpen}
+                onClose={() => setMobileSidebarOpen(false)}
+              >
+                {sidebarEl}
+              </SidebarDrawer>
+            );
+          }
+          return settings.sidebar ? sidebarEl : null;
+        })()}
 
         <main className="q-main">
           {activeFilter && (
