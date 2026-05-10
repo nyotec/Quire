@@ -118,8 +118,13 @@ Press `?` at any time to open the in-app shortcut help.
 | `⌘S` / `Ctrl+S` | Save Wiki |
 | `⌘,` / `Ctrl+,` | Open settings |
 | `⌘⇧K` / `Ctrl+Shift+K` | Toggle Tasks view |
+| `⌘;` / `Ctrl+;` | Lock now |
 | `?` | Show keyboard shortcuts |
 | `Esc` | Close palette / drawer / dialog |
+
+## Privacy (v1.3)
+
+Curtain mode (default) hides content visually after inactivity. Password mode (opt-in) encrypts every leaf body with AES-GCM derived from your password via PBKDF2. **No password recovery** — setup requires a JSON export first. See the root README's Privacy section for what's protected and what isn't.
 
 Inside the palette: `>` for commands, `#` for tags, `@` for authors, `!` for tasks, `/` for full-text body search.
 

@@ -6,6 +6,7 @@ import { renderMarkdown } from '../lib/markdown';
 import { toggleTaskOnLine } from '../lib/tasks';
 import { AuthorChip, AuthorChipPair } from './AuthorChip';
 import { useShortcuts } from '../lib/hotkeys';
+import { bodyAsString } from '../lib/lockState';
 
 interface LeafCardProps {
   leaf: Leaf;
@@ -23,6 +24,7 @@ interface LeafCardProps {
   onTag: (tag: string) => void;
   onAuthorClick: (id: UserID) => void;
   onChange: (next: Leaf) => void;
+  onChangeBody: (id: string, plaintext: string) => void;
   onToggleEdit: () => void;
   onTogglePin: () => void;
   getUser: (id: UserID | null | undefined) => User | null;
@@ -52,20 +54,22 @@ export function LeafCard({
   onTag,
   onAuthorClick,
   onChange,
+  onChangeBody,
   onToggleEdit,
   onTogglePin,
   getUser,
   dateFormat,
   dragHandlers,
 }: LeafCardProps) {
+  const bodyText = bodyAsString(leaf);
   const onTaskToggle = useCallback(
     (line: number) => {
-      const next = toggleTaskOnLine(leaf.body, line);
+      const next = toggleTaskOnLine(bodyText, line);
       if (next !== null) {
-        onChange({ ...leaf, body: next });
+        onChangeBody(leaf.id, next);
       }
     },
-    [leaf, onChange],
+    [leaf.id, bodyText, onChangeBody],
   );
 
   // While editing this leaf, capture Esc and ⌘Return to exit edit mode.
@@ -204,13 +208,13 @@ export function LeafCard({
         {editing ? (
           <textarea
             className="q-edit"
-            value={leaf.body}
-            onChange={(e) => onChange({ ...leaf, body: e.target.value })}
+            value={bodyText}
+            onChange={(e) => onChangeBody(leaf.id, e.target.value)}
             onClick={(e) => e.stopPropagation()}
             spellCheck={false}
           />
         ) : (
-          <div className="q-md">{renderMarkdown(leaf.body, ctx)}</div>
+          <div className="q-md">{renderMarkdown(bodyText, ctx)}</div>
         )}
       </div>
 

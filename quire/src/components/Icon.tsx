@@ -25,7 +25,10 @@ export type IconName =
   | 'plug'
   | 'gear'
   | 'download'
-  | 'check';
+  | 'check'
+  | 'lock'
+  | 'key'
+  | 'unlock';
 
 interface IconProps {
   name: IconName;
@@ -128,6 +131,24 @@ export function Icon({ name, size = 14 }: IconProps) {
       break;
     case 'check':
       body = (<path d="M3 8l3 3 7-7" />);
+      break;
+    case 'lock':
+      body = (<>
+        <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" />
+        <path d="M5 7V5a3 3 0 0 1 6 0v2" />
+      </>);
+      break;
+    case 'unlock':
+      body = (<>
+        <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" />
+        <path d="M5 7V5a3 3 0 0 1 5.5-1.6" />
+      </>);
+      break;
+    case 'key':
+      body = (<>
+        <circle cx="5" cy="11" r="2.2" />
+        <path d="M6.6 9.4l5-5M11 5l1.5 1.5M9.5 6.5l1.5 1.5" />
+      </>);
       break;
   }
   return <svg viewBox="0 0 16 16" style={s}>{body}</svg>;
