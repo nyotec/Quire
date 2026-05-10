@@ -25,7 +25,6 @@ import { ActivityMonitor } from './lib/activityMonitor';
 import {
   clearDecryptionCache,
   decryptedBodyCache,
-  encryptWithCurrentKey,
   setCryptoKey,
   useLockState,
 } from './lib/lockState';
@@ -39,10 +38,7 @@ import {
   randomSaltB64,
   verifyPassword,
 } from './lib/crypto';
-import {
-  detectFilenameFromHandle,
-  detectFilenameFromLocation,
-} from './lib/filename';
+import { detectFilenameFromLocation } from './lib/filename';
 import { computeDocumentTitle } from './lib/documentTitle';
 import type {
   AccentName,
@@ -55,7 +51,7 @@ import type {
   UserID,
   WikiState,
 } from './types';
-import { DEFAULT_AUTOLOCK, DEFAULT_PROTECTION, DEFAULT_SETTINGS } from './types';
+import { DEFAULT_SETTINGS } from './types';
 
 const ACCENTS: Record<AccentName, string> = {
   ochre: 'oklch(0.62 0.12 70)',

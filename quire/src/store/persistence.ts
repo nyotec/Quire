@@ -2,8 +2,6 @@ import { openDB, IDBPDatabase } from 'idb';
 import type { WikiState, SaveStatus, Tier, UserID } from '../types';
 import { migrateToV2 } from '../lib/users';
 import { migrateToV3 } from '../lib/migrate';
-import { encryptString, decryptString, isEncryptedField } from '../lib/crypto';
-import { getCryptoKey } from '../lib/lockState';
 
 const DB_NAME = 'quire';
 const DB_VERSION = 2;

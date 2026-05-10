@@ -21,11 +21,7 @@ import {
 import { extractTags, newLeafId, uuid, debounce } from '../lib/utils';
 import { persistence } from './persistence';
 import { touchLeaf, findUser } from '../lib/users';
-import {
-  decryptedBodyCache,
-  encryptWithCurrentKey,
-  bodyAsString,
-} from '../lib/lockState';
+import { decryptedBodyCache, encryptWithCurrentKey } from '../lib/lockState';
 
 interface UIState {
   paletteOpen: boolean;
