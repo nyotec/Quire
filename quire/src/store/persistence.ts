@@ -2,6 +2,12 @@ import { openDB, IDBPDatabase } from 'idb';
 import type { WikiState, SaveStatus, Tier, UserID } from '../types';
 import { migrateToV2 } from '../lib/users';
 import { migrateToV3 } from '../lib/migrate';
+import {
+  compress,
+  decompress,
+  CURRENT_ENCODING,
+  DataEncoding,
+} from '../lib/lzcompress';
 
 const DB_NAME = 'quire';
 const DB_VERSION = 2;
@@ -45,23 +51,34 @@ function serializeWikiState(state: WikiState): string {
     protection: state.protection,
     autolock: state.autolock,
   };
-  // Escape `</` to `<\/` so embedded user text can't terminate the script tag early.
-  return JSON.stringify(persisted).replace(/<\/(script)/gi, '<\\/$1');
+  return JSON.stringify(persisted);
+}
+
+/**
+ * Build the embedded payload — compressed-and-script-safe.
+ * The compressed UTF-16 output is a sequence of arbitrary 16-bit code points;
+ * we still escape `</` to `<\/` defensively in case any pair coincides with
+ * the script-end sequence.  In plain JSON mode we do the same.
+ */
+function buildPayload(json: string): { encoding: DataEncoding; body: string } {
+  const compressed = compress(json);
+  const safe = compressed.replace(/<\/(script)/gi, '<\\/$1');
+  return { encoding: CURRENT_ENCODING, body: safe };
 }
 
 function rebuildHTML(state: WikiState): string {
   const json = serializeWikiState(state);
+  const { encoding, body } = buildPayload(json);
+  // Match the existing tag (any attributes), capturing the open and close pieces.
   const rx = /(<script\s+id="quire-data"[^>]*>)[\s\S]*?(<\/script>)/;
   // outerHTML strips DOCTYPE; prepend it manually.
   let html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+  // Replace open tag with one that has the current encoding attribute.
+  const openTag = `<script id="quire-data" type="application/json" data-encoding="${encoding}">`;
   if (rx.test(html)) {
-    html = html.replace(rx, `$1${json}$2`);
+    html = html.replace(rx, `${openTag}${body}</script>`);
   } else {
-    // Fallback: inject before </head>
-    html = html.replace(
-      /<\/head>/i,
-      `<script id="quire-data" type="application/json">${json}</script></head>`,
-    );
+    html = html.replace(/<\/head>/i, `${openTag}${body}</script></head>`);
   }
   return html;
 }
@@ -129,10 +146,20 @@ export class WikiPersistence {
   loadFromHTML(): WikiState | null {
     try {
       const el = document.getElementById('quire-data');
-      if (!el || !el.textContent) return null;
-      const txt = el.textContent.trim();
-      if (!txt || txt === '{}') return null;
-      const obj = JSON.parse(txt);
+      if (!el) return null;
+      // Use raw textContent (no trim) — lz-utf16 can include leading/trailing
+      // whitespace-looking code units that we must not strip.
+      const raw = el.textContent ?? '';
+      if (!raw || raw === '{}') return null;
+      const encoding = (el.getAttribute('data-encoding') || 'plain') as DataEncoding;
+      let json: string;
+      try {
+        json = decompress(raw, encoding);
+      } catch (err) {
+        // Fallback: try the raw text as plain JSON in case the encoding marker is wrong
+        json = raw;
+      }
+      const obj = JSON.parse(json);
       if (!obj || typeof obj !== 'object') return null;
       if (!obj.wikiId || !Array.isArray(obj.leaves)) return null;
       return migrateToV3(migrateToV2(obj));

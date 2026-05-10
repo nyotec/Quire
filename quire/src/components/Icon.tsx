@@ -28,7 +28,10 @@ export type IconName =
   | 'check'
   | 'lock'
   | 'key'
-  | 'unlock';
+  | 'unlock'
+  | 'menu'
+  | 'back'
+  | 'more';
 
 interface IconProps {
   name: IconName;
@@ -148,6 +151,19 @@ export function Icon({ name, size = 14 }: IconProps) {
       body = (<>
         <circle cx="5" cy="11" r="2.2" />
         <path d="M6.6 9.4l5-5M11 5l1.5 1.5M9.5 6.5l1.5 1.5" />
+      </>);
+      break;
+    case 'menu':
+      body = (<path d="M2.5 4h11M2.5 8h11M2.5 12h11" />);
+      break;
+    case 'back':
+      body = (<path d="M10 3L5 8l5 5" />);
+      break;
+    case 'more':
+      body = (<>
+        <circle cx="3.5" cy="8" r="1.2" fill="currentColor" stroke="none" />
+        <circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" />
+        <circle cx="12.5" cy="8" r="1.2" fill="currentColor" stroke="none" />
       </>);
       break;
   }

@@ -5,6 +5,38 @@ React, all components, all CSS, and the user's notes data — is bundled into on
 HTML file via Vite's `vite-plugin-singlefile`. There are no runtime requests; it
 works fully offline from `file://`.
 
+## Responsive layout (v1.4)
+
+Three breakpoints, defined in CSS and mirrored in `src/lib/useMediaQuery.ts`:
+
+- **Mobile** ≤ 640 px — single-column stack layout, sidebar in a slide-in
+  drawer, command palette as a full-screen sheet, condensed top bar.
+- **Tablet** 641 – 1024 px — sidebar narrows to 220 px; otherwise desktop.
+- **Desktop** > 1024 px — full layout.
+
+Detection is purely media-query based via `useMediaQuery` (a thin wrapper
+around `window.matchMedia` that reactively updates on resize / rotate).
+`useIsMobile()`, `useIsTablet()`, `useIsTouchPrimary()`, `useIsPortrait()`
+are convenience hooks. The same query strings are encoded into `styles.css`
+under `@media` blocks so the CSS branches match the JS branches.
+
+Mobile-only behaviours wired in `App.tsx`:
+- Wikilinks **replace** the focused leaf rather than opening alongside.
+  A per-session `navHistory` array powers the top-bar back button.
+- The sidebar is always rendered inside `SidebarDrawer` — controlled by
+  a transient `mobileSidebarOpen` state, separate from `settings.sidebar`.
+- Selecting an item in the sidebar (open leaf, today, tag, author, tasks)
+  closes the drawer.
+
+Touch-primary devices (`@media (hover: none) and (pointer: coarse)`) get
+44×44 minimum tap targets; hover styles are gated by
+`@media (hover: hover)` so they don't stick after a tap. Leaf bodies set
+`overscroll-behavior-y: contain` to suppress pull-to-refresh.
+
+Dynamic viewport units (`100dvh` via `--q-vh`) are used in places where
+the iOS keyboard would otherwise push content off-screen, with a
+`@supports (height: 100dvh)` guard for older browsers.
+
 ## Top-level flow
 
 ```
@@ -128,14 +160,25 @@ calls `persistence.manualDownload`, which rebuilds the HTML and triggers a
 
 ## The data block
 
-The data block is a `<script id="quire-data" type="application/json">…</script>`
-in `<head>`. We rewrite it via:
+The data block is a `<script id="quire-data" type="application/json"
+data-encoding="…">…</script>` in `<head>`. We rewrite it via:
 
 ```js
 /(<script\s+id="quire-data"[^>]*>)[\s\S]*?(<\/script>)/
 ```
 
-…replacing the captured contents with the new JSON. **Crucially**, before
+…replacing the matched element with a new tag whose `data-encoding` reflects
+the current encoding (`lz-utf16` since v1.4; older builds wrote
+`plain` or omitted the attribute). The body is the JSON, possibly compressed
+with `lz-string`'s UTF-16 codec — typically 3–5× smaller than raw JSON.
+
+On load, `loadFromHTML()` reads `data-encoding` and decompresses if needed.
+Files written by v1.3 or earlier (no attribute, or `plain`) load correctly;
+once saved, they're upgraded to `lz-utf16` automatically. Encrypted leaf
+bodies are already high-entropy and barely compress, but the metadata
+(titles, tags, settings, structure) compresses well.
+
+**Crucially**, before
 inserting the JSON we replace `</` with `<\/` so any user-authored
 `</script>` text inside a leaf body cannot terminate the script tag early.
 

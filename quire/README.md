@@ -126,6 +126,26 @@ Press `?` at any time to open the in-app shortcut help.
 
 Curtain mode (default) hides content visually after inactivity. Password mode (opt-in) encrypts every leaf body with AES-GCM derived from your password via PBKDF2. **No password recovery** — setup requires a JSON export first. See the root README's Privacy section for what's protected and what isn't.
 
+## Mobile & responsive (v1.4)
+
+- The sidebar collapses into a slide-in drawer below 640 px. A hamburger button replaces the sidebar toggle.
+- Top bar condenses (status pill becomes a coloured dot only; New leaf button drops the keyboard hint).
+- The river forces stack layout — leaves are full-bleed, one above the next.
+- Tapping a wikilink **replaces** the current leaf (linear navigation) and pushes to a per-session back-history. A back button appears in the top bar when the history is non-empty.
+- Command palette becomes a full-screen sheet with the input pinned to the bottom for one-thumb reach.
+- All tap targets are at least 44 × 44 px on touch-primary devices.
+- Pull-to-refresh on leaf bodies is suppressed.
+- Dynamic viewport (`100dvh`) is used where supported so the iOS keyboard doesn't push the editor off-screen.
+
+## Size & performance (v1.4)
+
+- React is aliased to Preact at build time (~130 KB saved).
+- The embedded data block is LZ-string-compressed UTF-16 (`data-encoding="lz-utf16"`); the JSON is typically 3–5× smaller.
+- `console.*` calls are stripped by esbuild in production.
+- Build target is ES2022.
+
+Empty-wiki HTML is around 300 KB (vs ~390 KB in v1.3). For a wiki with 1000 leaves of typical content, expect ~1.5–2.5 MB total.
+
 Inside the palette: `>` for commands, `#` for tags, `@` for authors, `!` for tasks, `/` for full-text body search.
 
 **Troubleshooting**: if shortcuts don't work, check for browser extensions that intercept keyboard input (Vimium, Vimari, etc.) — disable them on `file://` URLs.

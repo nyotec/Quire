@@ -11,6 +11,10 @@ interface TopBarProps {
   onOpenSettings: () => void;
   onStatusClick: () => void;
   onLockNow: () => void;
+  /** Mobile-only: opens the slide-in sidebar drawer (CSS hides it on desktop). */
+  onOpenMobileSidebar?: () => void;
+  /** Mobile-only: when nav history is non-empty, render a back arrow. */
+  onBack?: (() => void) | null;
   theme: ThemeName;
   sidebarOpen: boolean;
   count: number;
@@ -52,6 +56,8 @@ export function TopBar({
   onOpenSettings,
   onStatusClick,
   onLockNow,
+  onOpenMobileSidebar,
+  onBack,
   theme,
   sidebarOpen,
   count,
@@ -63,7 +69,33 @@ export function TopBar({
   return (
     <header className="q-top">
       <div className="q-top-l">
-        <button className="q-icon-btn" onClick={onToggleSidebar} title={sidebarOpen ? 'Hide index' : 'Show index'}>
+        {/* Mobile-only back button — visible only via CSS (.q-back-btn) when nav history is set */}
+        {onBack && (
+          <button
+            className="q-icon-btn q-back-btn"
+            onClick={onBack}
+            title="Back"
+            aria-label="Back"
+          >
+            <Icon name="back" />
+          </button>
+        )}
+        {/* Mobile-only hamburger — CSS shows on ≤640px */}
+        {onOpenMobileSidebar && (
+          <button
+            className="q-icon-btn q-hamburger"
+            onClick={onOpenMobileSidebar}
+            title="Index"
+            aria-label="Open sidebar"
+          >
+            <Icon name="menu" />
+          </button>
+        )}
+        <button
+          className="q-icon-btn q-sidebar-toggle"
+          onClick={onToggleSidebar}
+          title={sidebarOpen ? 'Hide index' : 'Show index'}
+        >
           <Icon name="sidebar" />
         </button>
         <div className="q-brand">
