@@ -44,7 +44,6 @@ export function mergeImport(
   let folders: Folder[] = [...yours.folders];
   let users = [...yours.users];
 
-  const yoursLeafById = new Map(leaves.map((l) => [l.id, l] as const));
   const yoursFolderById = new Map(folders.map((f) => [f.id, f] as const));
 
   // ─── 1. Resolve folder conflicts first ─────────────────────────────────
