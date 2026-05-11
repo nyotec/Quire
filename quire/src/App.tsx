@@ -17,6 +17,9 @@ import { LockOverlay } from './components/LockOverlay';
 import { PasswordSetupDialog } from './components/PasswordSetupDialog';
 import { ChangePasswordDialog } from './components/ChangePasswordDialog';
 import { SidebarDrawer } from './components/SidebarDrawer';
+import { ImportDialog } from './components/ImportDialog';
+import { ExportJSONDialog } from './components/ExportJSONDialog';
+import { WelcomeScreen } from './components/WelcomeScreen';
 import {
   FolderContextMenu,
   useFolderContextMenuState,
@@ -203,6 +206,16 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   const [changePwdOpen, setChangePwdOpen] = useState<null | 'change' | 'disable'>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importInitialFile, setImportInitialFile] = useState<File | null>(null);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportStats, setExportStats] = useState<{
+    plaintext: number;
+    encrypted: number;
+    masterProtected: boolean;
+  } | null>(null);
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const [dropOverlayActive, setDropOverlayActive] = useState(false);
   const folderMenu = useFolderContextMenuState();
   const [folderEncryptTarget, setFolderEncryptTarget] = useState<string | null>(null);
   const [folderChangePwdTarget, setFolderChangePwdTarget] = useState<{
@@ -707,15 +720,17 @@ export default function App() {
     (async () => {
       const tier = persistence.detectTier();
       const fromHTML = persistence.loadFromHTML();
+      // First-run detection: data block was missing/empty AND no IDB draft.
+      const isFirstRun = !fromHTML;
       let baseState: WikiState =
         fromHTML ??
         migrateToV3(
           migrateToV2({
             schemaVersion: 1,
             wikiId: uuid(),
-            leaves: [welcomeLeaf()],
-            openIds: ['welcome'],
-            focusedId: 'welcome',
+            leaves: [],
+            openIds: [],
+            focusedId: null,
             settings: DEFAULT_SETTINGS,
             lastSaved: new Date().toISOString(),
           }),
@@ -734,7 +749,7 @@ export default function App() {
       const useDraft =
         draft && draft.lastSaved && baseState.lastSaved && draft.lastSaved > baseState.lastSaved;
 
-      const finish = async (chosen: WikiState) => {
+      const finish = async (chosen: WikiState, usedDraft: boolean) => {
         if (cancelled) return;
         // Resolve current user identity for this browser.
         let savedId = await persistence.getCurrentUserId(chosen.wikiId);
@@ -749,6 +764,16 @@ export default function App() {
         setShortcutHintShown(!!seenHint);
         setBaselineLeafCount(chosen.leaves.length);
         setHydrated(true);
+        // First-run welcome screen: empty initial state, no draft, no
+        // wiki-master password (otherwise the lock screen runs first).
+        if (
+          isFirstRun &&
+          !usedDraft &&
+          chosen.leaves.length === 0 &&
+          chosen.protection.mode !== 'password'
+        ) {
+          setWelcomeOpen(true);
+        }
       };
 
       if (useDraft) {
@@ -756,17 +781,17 @@ export default function App() {
           open: true,
           draftLastSaved: draft!.lastSaved,
           onRestore: () => {
-            finish(draft!);
+            finish(draft!, true);
             setRestore(null);
           },
           onDiscard: () => {
             persistence.clearDraftFromIDB(baseState.wikiId);
-            finish(baseState);
+            finish(baseState, false);
             setRestore(null);
           },
         });
       } else {
-        finish(baseState);
+        finish(baseState, false);
       }
 
       // Status pill subscription
@@ -874,6 +899,109 @@ export default function App() {
     protection.lockTitle,
     lockState.filename,
   ]);
+
+  // ─── global drag-and-drop for .json files ────────────────────────────
+  useEffect(() => {
+    let dragDepth = 0;
+    const onDragEnter = (e: globalThis.DragEvent) => {
+      if (!hydrated) return;
+      // Only react to actual file drags.  Other drags (text, links) keep dragDepth at 0.
+      const dt = e.dataTransfer;
+      if (!dt) return;
+      if (!Array.from(dt.types || []).includes('Files')) return;
+      e.preventDefault();
+      dragDepth++;
+      if (dragDepth === 1) setDropOverlayActive(true);
+    };
+    const onDragOver = (e: globalThis.DragEvent) => {
+      const dt = e.dataTransfer;
+      if (dt && Array.from(dt.types || []).includes('Files')) {
+        e.preventDefault();
+      }
+    };
+    const onDragLeave = (e: globalThis.DragEvent) => {
+      if (dragDepth === 0) return;
+      dragDepth--;
+      if (dragDepth === 0) setDropOverlayActive(false);
+      void e;
+    };
+    const onDrop = (e: globalThis.DragEvent) => {
+      const dt = e.dataTransfer;
+      if (!dt) return;
+      if (!Array.from(dt.types || []).includes('Files')) return;
+      e.preventDefault();
+      dragDepth = 0;
+      setDropOverlayActive(false);
+      const files = Array.from(dt.files || []);
+      if (files.length === 0) return;
+      if (files.length > 1) {
+        useWikiStore.getState().pushToast({
+          message: 'Drop a single file to import.',
+          kind: 'error',
+          ttl: 4000,
+        });
+        return;
+      }
+      const f = files[0];
+      if (!f.name.toLowerCase().endsWith('.json')) {
+        useWikiStore.getState().pushToast({
+          message: 'Only Quire JSON files can be imported.',
+          kind: 'error',
+          ttl: 4000,
+        });
+        return;
+      }
+      setImportInitialFile(f);
+      setImportDialogOpen(true);
+    };
+    window.addEventListener('dragenter', onDragEnter);
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('dragleave', onDragLeave);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragenter', onDragEnter);
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('dragleave', onDragLeave);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, [hydrated]);
+
+  // ─── apply an imported merged state ──────────────────────────────────
+  const onApplyImport = useCallback(
+    async (merged: WikiState, alsoBackupCurrent: boolean) => {
+      if (alsoBackupCurrent) {
+        try {
+          await persistence.exportJSON(
+            useWikiStore.getState().getPersistableState(),
+          );
+        } catch (err) {
+          console.warn('backup-before-import failed', err);
+        }
+      }
+      store.applyMergedState(merged);
+      setImportDialogOpen(false);
+      setImportInitialFile(null);
+      setWelcomeOpen(false);
+      useWikiStore.getState().pushToast({
+        message: `Imported ${merged.leaves.length} leaves.`,
+        ttl: 6000,
+      });
+    },
+    [store],
+  );
+
+  // ─── export-to-JSON with plaintext warning ───────────────────────────
+  const openExportDialog = useCallback(async () => {
+    const stats = await persistence.previewExportStats(
+      useWikiStore.getState().getPersistableState(),
+    );
+    setExportStats(stats);
+    setExportDialogOpen(true);
+  }, []);
+  const confirmExport = useCallback(async () => {
+    await persistence.exportJSON(useWikiStore.getState().getPersistableState());
+    setExportDialogOpen(false);
+  }, []);
 
   // ─── first-time shortcut hint ──────────────────────────────────────────
   useEffect(() => {
@@ -1624,9 +1752,12 @@ export default function App() {
         onExportMarkdown={() =>
           persistence.exportMarkdown(useWikiStore.getState().getPersistableState())
         }
-        onExportJSON={() =>
-          persistence.exportJSON(useWikiStore.getState().getPersistableState())
-        }
+        onExportJSON={() => openExportDialog()}
+        onImportJSON={() => {
+          setImportInitialFile(null);
+          setImportDialogOpen(true);
+          store.setSettingsOpen(false);
+        }}
         onConnectFile={onConnectFile}
         fileSizeText={fileSizeText}
         lastSaved={saveStatus.lastSaved}
@@ -1792,6 +1923,44 @@ export default function App() {
       />
 
       <ShortcutHelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+
+      <WelcomeScreen
+        open={welcomeOpen}
+        onStartFresh={() => setWelcomeOpen(false)}
+        onImport={() => {
+          setImportInitialFile(null);
+          setImportDialogOpen(true);
+          // keep welcome open behind the import dialog; close it on successful apply
+        }}
+      />
+
+      <ImportDialog
+        open={importDialogOpen}
+        currentState={useWikiStore.getState().getPersistableState()}
+        initialFile={importInitialFile}
+        onCancel={() => {
+          setImportDialogOpen(false);
+          setImportInitialFile(null);
+        }}
+        onApply={onApplyImport}
+      />
+
+      <ExportJSONDialog
+        open={exportDialogOpen}
+        stats={exportStats}
+        onCancel={() => setExportDialogOpen(false)}
+        onConfirm={confirmExport}
+      />
+
+      {dropOverlayActive && (
+        <div className="q-drop-overlay" aria-hidden="true">
+          <div className="q-drop-overlay-card">
+            <div style={{ fontSize: 56 }}>📥</div>
+            <div className="q-drop-overlay-title">Drop a Quire JSON file here</div>
+            <div className="q-drop-overlay-sub">to import its content</div>
+          </div>
+        </div>
+      )}
 
       <ToastStack toasts={toasts} onDismiss={(id) => store.dismissToast(id)} />
 

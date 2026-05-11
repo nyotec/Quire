@@ -250,6 +250,22 @@ Toggle sidebar / backlinks / spine numbers individually. All settings live in `W
 
 **Available since**: v1
 
+### Backups, restore, migration (new in v1.6)
+
+Quire has one mechanism for moving content into a wiki: import from JSON.
+
+**Backup**: Settings → "Export to JSON". A `.json` file downloads with your full wiki content (plaintext for readable folders; encrypted folders are exported as-is). Store it somewhere safe.
+
+**Restore**: Settings → "Import JSON file" (or drag the file onto the running app, or click "Import JSON" on the welcome screen). The dialog walks you through conflict resolution with three options per leaf (keep yours / keep theirs / keep both) and per folder (merge / rename theirs).
+
+**Upgrade to a new version**: open your old `quire.html`, export to JSON, download the new file from quire.one, click "Import JSON" on the welcome screen, select the file you just exported. Your old file stays as a secondary backup.
+
+**Self-host with a seeded wiki**: drop a `seed.json` (the output of "Export to JSON" from an authoring file) into the project root before `npm run build`. The built `dist/quire.html` ships with that content baked in. See `seed.example.json` for the structure.
+
+**Available since**: v1.6 (envelope, conflict UI, welcome screen, build-time seed). v1 (raw JSON export — still importable).
+
+**Notes**: the v1.6 envelope is self-describing and includes diagnostic metadata; pre-v1.6 raw exports are still importable. Schema migration is automatic — old JSON files (v1, v1.1, ...) upgrade transparently on import.
+
 ### Folders (new in v1.5)
 
 #### Nested folder tree
@@ -448,7 +464,11 @@ A: Not directly in v1.4 — public sharing of individual leaves is on the roadma
 
 **Q: How do I back up my wiki?**
 
-A: The file IS the backup. Copy it. Email it to yourself. Put it in version control. If you've enabled password mode, the encrypted file is also a perfectly valid backup — anyone with the password can restore it.
+A: Two options. (1) Copy the HTML file itself — it IS the wiki. (2) Use Settings → "Export to JSON" to produce a plaintext snapshot. The JSON is the safety net against password loss; the HTML is more compact.
+
+**Q: How do I update to a new Quire version?**
+
+A: Export your current wiki to JSON. Download the new `quire.html` from quire.one. Open it. Click "Import JSON" on the welcome screen. Select your JSON file. Done. Keep your old file as a secondary backup until you're sure the new one works.
 
 **Q: What happens if I close the tab without saving?**
 
@@ -502,6 +522,7 @@ Issues and pull requests are welcome.
 - **v1.3** — auto-lock with curtain mode + opt-in password mode (PBKDF2 + AES-GCM body encryption); lock screen with configurable identifying info; manual lock (`⌘;`); IDB drafts stay encrypted in password mode.
 - **v1.4** — responsive design (phones, tablets), file size reduction (Preact + lz-string compression), comprehensive README.
 - **v1.5** — folders + per-folder encryption. Nested folder tree in the sidebar with right-click context menu, breadcrumbs in leaf headers, `:` palette mode for finding folders. Each folder can have its own password (independent of the v1.3 wiki master password); nested folders follow the closest-enclosing-protected-ancestor rule. Schema v3 → v4 migration is forward-only.
+- **v1.6** — JSON import with conflict resolution, formalized export envelope, build-time seeding via `seed.json`, first-run welcome screen with "Start fresh" / "Import JSON". One mechanism (JSON) covers backup, restore, version upgrade, and content seeding for self-hosters. Centralized schema migrations.
 
 ## License
 

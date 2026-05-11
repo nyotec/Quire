@@ -32,6 +32,7 @@ interface DrawerProps {
   onSave: () => void;
   onExportMarkdown: () => void;
   onExportJSON: () => void;
+  onImportJSON: () => void;
   onExportSnapshot: () => void;
   onConnectFile?: () => void;
   fileSizeText: string;
@@ -67,6 +68,7 @@ export function SettingsDrawer({
   onSave,
   onExportMarkdown,
   onExportJSON,
+  onImportJSON,
   onExportSnapshot,
   onConnectFile,
   fileSizeText,
@@ -203,7 +205,11 @@ export function SettingsDrawer({
             </button>
             <button className="q-drawer-btn" onClick={onExportJSON}>
               <Icon name="download" size={12} />
-              <span>Export JSON</span>
+              <span>Export to JSON</span>
+            </button>
+            <button className="q-drawer-btn" onClick={onImportJSON}>
+              <Icon name="download" size={12} />
+              <span>Import JSON file…</span>
             </button>
             <div className="q-drawer-info">File size · {fileSizeText}</div>
             <div className="q-drawer-info">
