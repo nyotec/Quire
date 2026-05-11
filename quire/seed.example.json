@@ -1,0 +1,83 @@
+{
+  "format": "quire-export",
+  "exportVersion": 1,
+  "exportedAt": "2026-05-10T00:00:00.000Z",
+  "exportedBy": "quire 1.6.0",
+  "wikiId": "00000000-0000-0000-0000-000000000000",
+  "schemaVersion": 4,
+  "data": {
+    "schemaVersion": 4,
+    "wikiId": "00000000-0000-0000-0000-000000000000",
+    "leaves": [
+      {
+        "id": "welcome",
+        "title": "Welcome to Quire",
+        "body": "Quire is a **single-file notebook**. Open this file, write, share it — the whole wiki lives inside it.\n\nTry it:\n\n- Click [[Wikilinks]] to follow links between notes.\n- Press `⌘K` to find anything by name.\n- Press `⌘J` to start a new leaf.\n- Press `⌘S` to save your wiki to disk.\n- Press `?` anytime to see all keyboard shortcuts.\n\nIn Chromium browsers (Chrome, Edge, Brave, Arc), you'll be prompted once to connect Quire to a file on disk. After that, every change auto-saves silently.\n\nIn Firefox and Safari, hit `⌘S` to download the updated HTML — replace your old `quire.html` with it to keep changes permanent.\n\n#meta #guide",
+        "tags": ["meta", "guide"],
+        "pinned": true,
+        "created": "2026-05-10T00:00:00.000Z",
+        "edited": "2026-05-10T00:00:00.000Z",
+        "authorId": "quire-team",
+        "lastEditedBy": "quire-team",
+        "contributors": ["quire-team"],
+        "folderId": null
+      },
+      {
+        "id": "wikilinks",
+        "title": "Wikilinks",
+        "body": "Wrap any phrase in double brackets to link to another note:\n\n`[[Another note]]`\n\nClicking a wikilink opens the target note in the river beside this one — it doesn't navigate away. Notes accumulate horizontally; you can read three at once.\n\nIf the target doesn't exist yet, the link is rendered dim. Click it and Quire creates the leaf for you.\n\nBacklinks are computed automatically — see the panel at the bottom of a leaf when it's focused.\n\nRelated: [[Welcome to Quire]]\n\n#meta #syntax",
+        "tags": ["meta", "syntax"],
+        "created": "2026-05-10T00:00:00.000Z",
+        "edited": "2026-05-10T00:00:00.000Z",
+        "authorId": "quire-team",
+        "lastEditedBy": "quire-team",
+        "contributors": ["quire-team"],
+        "folderId": null
+      }
+    ],
+    "openIds": ["welcome"],
+    "focusedId": "welcome",
+    "settings": {
+      "theme": "paper",
+      "accent": "ochre",
+      "fontPair": "editorial",
+      "density": "regular",
+      "layout": "river",
+      "sidebar": true,
+      "backlinks": true,
+      "spineNumbers": true,
+      "plugins": {
+        "backlinks": true,
+        "graph": false,
+        "math": false,
+        "code": true,
+        "wordcount": false,
+        "darkjournal": false
+      },
+      "tasks": {
+        "showOverdueBadge": true,
+        "dateFormat": "relative"
+      }
+    },
+    "lastSaved": "2026-05-10T00:00:00.000Z",
+    "users": [
+      {
+        "id": "quire-team",
+        "name": "Quire team",
+        "initials": "Q",
+        "color": "oklch(0.62 0.12 70)",
+        "joined": "2026-05-10T00:00:00.000Z",
+        "lastSeen": "2026-05-10T00:00:00.000Z"
+      }
+    ],
+    "protection": {
+      "mode": "curtain",
+      "hideIdentifyingInfo": false
+    },
+    "autolock": {
+      "inactivityTimeoutMs": 300000,
+      "hiddenTimeoutMs": 30000
+    },
+    "folders": []
+  }
+}

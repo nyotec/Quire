@@ -5,6 +5,45 @@ React, all components, all CSS, and the user's notes data — is bundled into on
 HTML file via Vite's `vite-plugin-singlefile`. There are no runtime requests; it
 works fully offline from `file://`.
 
+## JSON import / export envelope (v1.6)
+
+The single canonical mechanism for moving content between Quire files is
+JSON import. The export wraps the `WikiState` in a self-describing envelope:
+
+```
+{
+  format: "quire-export",
+  exportVersion: 1,
+  exportedAt, exportedBy, wikiId, schemaVersion,
+  data: { ...WikiState }
+}
+```
+
+`src/lib/exportEnvelope.ts` wraps/unwraps. The importer in
+`src/lib/importParser.ts` accepts both the envelope and pre-v1.6 raw
+exports (top-level `WikiState`), then runs `migrateToCurrent` from
+`src/lib/migrations.ts` which chains through every schema bump.
+
+`persistence.exportJSON` decrypts content the user can currently read
+(folders they have unlocked), strips the master-password metadata so
+the export isn't itself password-protected, and preserves the
+`protection` field on folders the user hasn't unlocked. Those locked
+folders survive in the export as opaque encrypted blobs.
+
+Conflict detection (`src/lib/conflictDetector.ts`) is `O(N+M)` via Maps:
+leaf-id collisions, folder-name-in-same-parent collisions, and
+title ambiguity (same title, different IDs). The merger
+(`src/lib/merger.ts`) applies the user's chosen resolution per
+conflict and produces the merged state as a pure function. The store's
+`applyMergedState` action commits it in a single transaction.
+
+The Vite `seedDataPlugin` reads `seed.json` (if present), unwraps the
+envelope, validates the WikiState shape, lz-compresses, and injects
+into the built `<script id="quire-data">` block. The result is a
+production `quire.html` that ships with welcome content already inside
+its data block. If `seed.json` is missing, the build proceeds with an
+empty data block and the first-run flow shows the welcome screen.
+
 ## Folders & per-folder encryption (v1.5)
 
 Folders are a flat array in `WikiState.folders`; the tree is derived in

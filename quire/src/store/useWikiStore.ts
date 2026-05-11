@@ -66,6 +66,8 @@ export interface WikiStore extends UIState {
   setProtection: (p: ProtectionConfig) => void;
   setAutolock: (a: AutolockConfig) => void;
   setLeafBodies: (entries: { id: LeafID; body: LeafBody }[]) => void;
+  /** Apply a merged WikiState (from JSON import) as a single transaction. */
+  applyMergedState: (merged: WikiState) => void;
 
   // leaf ops
   openLeaf: (id: LeafID) => void;
@@ -225,6 +227,15 @@ export const useWikiStore = create<WikiStore>((set, get) => {
       set((s) => ({
         leaves: s.leaves.map((l) => (map.has(l.id) ? { ...l, body: map.get(l.id)! } : l)),
       }));
+    }),
+
+    applyMergedState: persistAfter((merged: WikiState) => {
+      set({
+        leaves: merged.leaves,
+        folders: merged.folders,
+        users: merged.users,
+        lastSaved: merged.lastSaved,
+      });
     }),
 
     openLeaf: (id) => {

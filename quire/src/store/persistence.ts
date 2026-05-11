@@ -1,7 +1,6 @@
 import { openDB, IDBPDatabase } from 'idb';
-import type { WikiState, SaveStatus, Tier, UserID } from '../types';
-import { migrateToV2 } from '../lib/users';
-import { migrateToV3, migrateToV4 } from '../lib/migrate';
+import type { Leaf, WikiState, SaveStatus, Tier, UserID } from '../types';
+import { migrateToCurrent } from '../lib/migrations';
 import {
   compress,
   decompress,
@@ -163,7 +162,7 @@ export class WikiPersistence {
       const obj = JSON.parse(json);
       if (!obj || typeof obj !== 'object') return null;
       if (!obj.wikiId || !Array.isArray(obj.leaves)) return null;
-      return migrateToV4(migrateToV3(migrateToV2(obj)));
+      return migrateToCurrent(obj).state;
     } catch {
       return null;
     }
@@ -173,7 +172,7 @@ export class WikiPersistence {
     try {
       const db = await this.db();
       const rec = await db.get(STORE_DRAFTS, `draft:${wikiId}`);
-      if (rec && rec.state) return migrateToV4(migrateToV3(migrateToV2(rec.state)));
+      if (rec && rec.state) return migrateToCurrent(rec.state).state;
       return null;
     } catch {
       return null;
@@ -484,15 +483,106 @@ export class WikiPersistence {
   }
 
   async exportJSON(state: WikiState): Promise<void> {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const exportState = await this.buildExportState(state);
+    const { wrapInEnvelope } = await import('../lib/exportEnvelope');
+    const envelope = wrapInEnvelope(exportState);
+    const blob = new Blob([JSON.stringify(envelope, null, 2)], {
+      type: 'application/json',
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'quire-state.json';
+    a.download = `quire-export-${new Date()
+      .toISOString()
+      .slice(0, 19)
+      .replace(/[:T]/g, '-')}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  /**
+   * Build an export-friendly state:
+   *  - Master password metadata is stripped (mode → 'curtain', no salt/iterations/verifier).
+   *  - Folders the user has currently unlocked have their `protection` field
+   *    stripped and their leaves' bodies decrypted to plaintext.
+   *  - Folders the user has NOT unlocked are preserved with `protection` and
+   *    encrypted bodies.
+   */
+  async buildExportState(state: WikiState): Promise<WikiState> {
+    const { decryptLeafBody } = await import('../lib/folderCrypto');
+    const { closestProtectedAncestor } = await import('../lib/folders');
+    const { isFolderUnlocked } = await import('../lib/lockState');
+
+    // Decrypt unlocked-folder bodies
+    const leaves: Leaf[] = [];
+    for (const l of state.leaves) {
+      if (typeof l.body === 'string') {
+        leaves.push(l);
+        continue;
+      }
+      const enc = closestProtectedAncestor(state.folders, l.folderId || null);
+      if (enc && isFolderUnlocked(enc.id)) {
+        try {
+          const pt = await decryptLeafBody(state.folders, l);
+          leaves.push({ ...l, body: pt ?? '' });
+        } catch {
+          leaves.push(l);
+        }
+      } else {
+        leaves.push(l);
+      }
+    }
+
+    // Strip protection on unlocked folders
+    const folders = state.folders.map((f) => {
+      if (f.protection && isFolderUnlocked(f.id)) {
+        const { protection: _drop, ...rest } = f;
+        return rest as typeof f;
+      }
+      return f;
+    });
+
+    return {
+      ...state,
+      leaves,
+      folders,
+      protection: {
+        mode: 'curtain',
+        lockTitle: state.protection.lockTitle,
+        lockSubtitle: state.protection.lockSubtitle,
+        hideIdentifyingInfo: state.protection.hideIdentifyingInfo,
+      },
+    };
+  }
+
+  /** Stats useful for the ExportJSONDialog: readable vs locked counts. */
+  async previewExportStats(
+    state: WikiState,
+  ): Promise<{
+    plaintext: number;
+    encrypted: number;
+    masterProtected: boolean;
+  }> {
+    const { closestProtectedAncestor } = await import('../lib/folders');
+    const { isFolderUnlocked } = await import('../lib/lockState');
+    let plaintext = 0;
+    let encrypted = 0;
+    for (const l of state.leaves) {
+      if (typeof l.body === 'string') {
+        plaintext++;
+      } else {
+        const enc = closestProtectedAncestor(state.folders, l.folderId || null);
+        if (enc && isFolderUnlocked(enc.id)) plaintext++;
+        else encrypted++;
+      }
+    }
+    return {
+      plaintext,
+      encrypted,
+      masterProtected: state.protection.mode === 'password',
+    };
   }
 
   // ─── cross-tab coordination ───────────────────────────────────────────
