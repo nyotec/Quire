@@ -79,6 +79,8 @@ export interface Settings {
   spineNumbers: boolean;
   plugins: Record<string, boolean>;
   tasks: TaskSettings;
+  /** Opt-in author chips (v1.6.1). Defaults to false for solo users. */
+  showAuthorAttribution: boolean;
 }
 
 export type ProtectionMode = 'curtain' | 'password';
@@ -173,4 +175,5 @@ export const DEFAULT_SETTINGS: Settings = {
     showOverdueBadge: true,
     dateFormat: 'relative',
   },
+  showAuthorAttribution: false,
 };

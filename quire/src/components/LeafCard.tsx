@@ -38,6 +38,7 @@ interface LeafCardProps {
   onToggleEdit: () => void;
   onTogglePin: () => void;
   getUser: (id: UserID | null | undefined) => User | null;
+  showAttribution?: boolean;
   dateFormat?: DateFormat;
   folders?: Folder[];
   onFolderClick?: (id: FolderID) => void;
@@ -70,6 +71,7 @@ export function LeafCard({
   onToggleEdit,
   onTogglePin,
   getUser,
+  showAttribution = false,
   dateFormat,
   folders,
   onFolderClick,
@@ -161,21 +163,25 @@ export function LeafCard({
             <h2 className="q-leaf-title">{leaf.title}</h2>
           )}
           <div className="q-leaf-meta">
-            <AuthorChipPair
-              author={author}
-              editor={editor}
-              authorTitle={authorTitle}
-              editorTitle={editorTitle}
-              onClickAuthor={(e) => {
-                e.stopPropagation();
-                if (author) onAuthorClick(author.id);
-              }}
-              onClickEditor={(e) => {
-                e.stopPropagation();
-                if (editor) onAuthorClick(editor.id);
-              }}
-            />
-            <span className="q-leaf-meta-sep">·</span>
+            {showAttribution && (
+              <>
+                <AuthorChipPair
+                  author={author}
+                  editor={editor}
+                  authorTitle={authorTitle}
+                  editorTitle={editorTitle}
+                  onClickAuthor={(e) => {
+                    e.stopPropagation();
+                    if (author) onAuthorClick(author.id);
+                  }}
+                  onClickEditor={(e) => {
+                    e.stopPropagation();
+                    if (editor) onAuthorClick(editor.id);
+                  }}
+                />
+                <span className="q-leaf-meta-sep">·</span>
+              </>
+            )}
             <span>{formatRel(leaf.edited)}</span>
             {leaf.tags.length > 0 && <span className="q-leaf-meta-sep">·</span>}
             {leaf.tags.slice(0, 4).map((t) => (

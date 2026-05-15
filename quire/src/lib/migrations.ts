@@ -58,6 +58,16 @@ export function migrateToCurrent(raw: any): MigrationResult {
   for (const c of captured) {
     if (c.includes('[quire]')) warnings.push(c.replace(/^\[quire\]\s*/, ''));
   }
+  // v1.6.1: auto-enable showAuthorAttribution for wikis that already have
+  // multiple non-legacy users — pre-existing multi-user wikis keep their
+  // visible chips. Solo wikis (empty users array or just the legacy
+  // migration user) default to false.
+  if (state && state.settings) {
+    if (typeof (state.settings as any).showAuthorAttribution !== 'boolean') {
+      const nonLegacy = (state.users || []).filter((u) => u.id !== 'legacy');
+      (state.settings as any).showAuthorAttribution = nonLegacy.length >= 2;
+    }
+  }
   return { state, warnings };
 }
 

@@ -1766,6 +1766,136 @@ kbd {
   margin: 8px 0 4px;
 }
 
+/* ─── intro card (v1.6.1) ─────────────────────────────────────────── */
+.q-intro-card {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 80;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  background: var(--q-bg);
+  border: 0.5px solid var(--q-line);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px color-mix(in oklch, var(--q-ink) 15%, transparent);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: q-rise .2s ease-out;
+}
+.q-theme-mono .q-intro-card { border-radius: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .q-intro-card { animation: none; }
+}
+@media (max-width: 640px) {
+  .q-intro-card {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    width: auto;
+  }
+}
+.q-intro-card-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--q-dim);
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.q-intro-card-close:hover { background: var(--q-surface-2); color: var(--q-ink); }
+.q-intro-card-emoji { font-size: 22px; line-height: 1; }
+.q-intro-card-title {
+  font-family: var(--q-font-head);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--q-ink);
+  letter-spacing: -0.01em;
+}
+.q-theme-mono .q-intro-card-title { font-family: var(--q-font-mono); }
+.q-intro-card-body {
+  font-size: 13px;
+  color: var(--q-ink-2);
+  line-height: 1.5;
+  margin: 4px 0 8px;
+}
+.q-intro-card-actions {
+  display: flex;
+  gap: 8px;
+}
+.q-intro-card-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--q-accent);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 0.5px;
+  text-align: left;
+  padding: 4px 0 0;
+  cursor: pointer;
+}
+.q-intro-card-link:hover { filter: brightness(1.05); }
+
+/* ─── debug panel (v1.6.1) ─────────────────────────────────────── */
+.q-debug-panel {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 70;
+  width: 320px;
+  background: var(--q-surface);
+  border: 0.5px solid var(--q-line-2);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  padding: 12px 14px;
+  font-family: var(--q-font-mono);
+  font-size: 11px;
+  color: var(--q-ink-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.q-theme-mono .q-debug-panel { border-radius: 0; }
+.q-debug-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.q-debug-panel-title {
+  font-weight: 600;
+  color: var(--q-ink);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.q-debug-panel-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.q-debug-panel-key { color: var(--q-dim); }
+.q-debug-panel-val { color: var(--q-ink-2); text-align: right; word-break: break-all; }
+.q-debug-panel-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+}
+
 /* ─── import / export / welcome (v1.6) ───────────────────────────── */
 .q-import-dialog { width: min(640px, 96vw); }
 .q-export-dialog { width: min(520px, 96vw); }

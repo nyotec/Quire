@@ -523,6 +523,7 @@ Issues and pull requests are welcome.
 - **v1.4** — responsive design (phones, tablets), file size reduction (Preact + lz-string compression), comprehensive README.
 - **v1.5** — folders + per-folder encryption. Nested folder tree in the sidebar with right-click context menu, breadcrumbs in leaf headers, `:` palette mode for finding folders. Each folder can have its own password (independent of the v1.3 wiki master password); nested folders follow the closest-enclosing-protected-ancestor rule. Schema v3 → v4 migration is forward-only.
 - **v1.6** — JSON import with conflict resolution, formalized export envelope, build-time seeding via `seed.json`, first-run welcome screen with "Start fresh" / "Import JSON". One mechanism (JSON) covers backup, restore, version upgrade, and content seeding for self-hosters. Centralized schema migrations.
+- **v1.6.1** — UX correction & bug fix. Fixes a data-loss bug on Microsoft Edge (regex-based data-block replacement was fragile; now uses a DOMParser-based replacement that works identically across browsers). Author attribution is now opt-in (Settings → Author attribution) rather than a forced first-run modal. The blocking "Start fresh / Import" welcome screen is replaced by a non-blocking intro card layered over the seeded content. Adds a debug panel (Settings → About → Show debug info) and `[Quire/save]` / `[Quire/load]` diagnostic logging.
 
 ## License
 

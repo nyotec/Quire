@@ -8,14 +8,10 @@ interface Props {
 }
 
 export function AuthorChip({ user, size = 'sm', title, onClick }: Props) {
-  const u = user || {
-    id: 'unknown',
-    name: 'Unknown user',
-    initials: '?',
-    color: 'oklch(0.65 0.02 60)',
-    joined: '',
-    lastSeen: '',
-  };
+  // v1.6.1: when there's no user (attribution disabled, or unknown author),
+  // render nothing. The leaf header still reads cleanly with timestamp + tags.
+  if (!user) return null;
+  const u = user;
   const style: React.CSSProperties = {
     background: `color-mix(in oklch, ${u.color} 18%, transparent)`,
     borderColor: `color-mix(in oklch, ${u.color} 35%, transparent)`,
@@ -48,10 +44,15 @@ export function AuthorChipPair({
   onClickAuthor?: (e: React.MouseEvent) => void;
   onClickEditor?: (e: React.MouseEvent) => void;
 }) {
+  // If neither side has a user, render nothing.
+  if (!author && !editor) return null;
   const same = author && editor && author.id === editor.id;
   if (same) {
     return <AuthorChip user={author} title={authorTitle} onClick={onClickAuthor} />;
   }
+  // If only one side is present, render just that chip.
+  if (!author) return <AuthorChip user={editor} title={editorTitle} onClick={onClickEditor} />;
+  if (!editor) return <AuthorChip user={author} title={authorTitle} onClick={onClickAuthor} />;
   return (
     <span className="q-author-chip-pair">
       <AuthorChip user={author} title={authorTitle} onClick={onClickAuthor} />

@@ -57,30 +57,75 @@ function serializeWikiState(state: WikiState): string {
 /**
  * Build the embedded payload — compressed-and-script-safe.
  * The compressed UTF-16 output is a sequence of arbitrary 16-bit code points;
- * we still escape `</` to `<\/` defensively in case any pair coincides with
- * the script-end sequence.  In plain JSON mode we do the same.
+ * `</` would only become script-terminating if the parser is reading the
+ * content as raw HTML, which it isn't when we use DOMParser + textContent.
+ * The defensive escape stays for the regex-fallback path.
  */
 function buildPayload(json: string): { encoding: DataEncoding; body: string } {
   const compressed = compress(json);
-  const safe = compressed.replace(/<\/(script)/gi, '<\\/$1');
-  return { encoding: CURRENT_ENCODING, body: safe };
+  return { encoding: CURRENT_ENCODING, body: compressed };
+}
+
+/**
+ * Replace the embedded data block via the DOM parser rather than a regex.
+ * The regex approach was fragile across browsers (Edge in particular
+ * surfaced bug v1.6.1 where the save grew the file but the load read
+ * empty content — attribute ordering and outerHTML differences confused
+ * the regex). DOMParser handles attribute order, whitespace, and special
+ * characters in content correctly. textContent (not innerHTML) is used so
+ * the data is not re-parsed as HTML.
+ */
+function replaceDataBlockViaDOM(state: WikiState): string {
+  const json = serializeWikiState(state);
+  const { encoding, body } = buildPayload(json);
+  // Snapshot the current document
+  const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  const script = doc.getElementById('quire-data');
+  if (!script) {
+    // Defensive: if the script element somehow isn't there, fall back to
+    // the regex path so we don't lose data — but log this as critical.
+    console.error('[Quire/save] CRITICAL: <script id="quire-data"> not found in document — falling back to regex');
+    return regexFallbackReplace(html, encoding, body);
+  }
+  script.textContent = body;
+  script.setAttribute('type', 'application/json');
+  script.setAttribute('data-encoding', encoding);
+  return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+}
+
+function regexFallbackReplace(
+  html: string,
+  encoding: DataEncoding,
+  body: string,
+): string {
+  const safeBody = body.replace(/<\/(script)/gi, '<\\/$1');
+  const rx = /(<script\s+id="quire-data"[^>]*>)[\s\S]*?(<\/script>)/;
+  const openTag = `<script id="quire-data" type="application/json" data-encoding="${encoding}">`;
+  if (rx.test(html)) {
+    return html.replace(rx, `${openTag}${safeBody}</script>`);
+  }
+  return html.replace(/<\/head>/i, `${openTag}${safeBody}</script></head>`);
 }
 
 function rebuildHTML(state: WikiState): string {
-  const json = serializeWikiState(state);
-  const { encoding, body } = buildPayload(json);
-  // Match the existing tag (any attributes), capturing the open and close pieces.
-  const rx = /(<script\s+id="quire-data"[^>]*>)[\s\S]*?(<\/script>)/;
-  // outerHTML strips DOCTYPE; prepend it manually.
-  let html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
-  // Replace open tag with one that has the current encoding attribute.
-  const openTag = `<script id="quire-data" type="application/json" data-encoding="${encoding}">`;
-  if (rx.test(html)) {
-    html = html.replace(rx, `${openTag}${body}</script>`);
-  } else {
-    html = html.replace(/<\/head>/i, `${openTag}${body}</script></head>`);
+  const beforeLength = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+  const out = replaceDataBlockViaDOM(state);
+  console.log(
+    '[Quire/save] HTML rebuild:',
+    'before =', beforeLength.length,
+    'after =', out.length,
+    'delta =', out.length - beforeLength.length,
+    'leaves =', state.leaves.length,
+    'wikiId =', state.wikiId,
+  );
+  if (out === beforeLength) {
+    console.error(
+      '[Quire/save] CRITICAL: rebuilt HTML is byte-identical to source — data block was NOT updated.',
+    );
   }
-  return html;
+  return out;
 }
 
 export class WikiPersistence {
@@ -144,26 +189,49 @@ export class WikiPersistence {
 
   // ─── load path ─────────────────────────────────────────────────────────
   loadFromHTML(): WikiState | null {
+    console.log('[Quire/load] Starting load from embedded data block');
     try {
       const el = document.getElementById('quire-data');
+      console.log('[Quire/load] Data block element:', el ? 'found' : 'missing');
       if (!el) return null;
-      // Use raw textContent (no trim) — lz-utf16 can include leading/trailing
-      // whitespace-looking code units that we must not strip.
+      const encoding = el.getAttribute('data-encoding') || 'plain';
       const raw = el.textContent ?? '';
-      if (!raw || raw === '{}') return null;
-      const encoding = (el.getAttribute('data-encoding') || 'plain') as DataEncoding;
+      console.log(
+        '[Quire/load] Data encoding:', encoding,
+        '· raw text length:', raw.length,
+        '· first 60 chars:', JSON.stringify(raw.slice(0, 60)),
+      );
+      if (!raw || raw === '{}') {
+        console.log('[Quire/load] Data block empty — treating as fresh wiki');
+        return null;
+      }
       let json: string;
       try {
         json = decompress(raw, encoding);
       } catch (err) {
         // Fallback: try the raw text as plain JSON in case the encoding marker is wrong
+        console.warn('[Quire/load] decompress failed; falling back to raw text as JSON', err);
         json = raw;
       }
+      console.log('[Quire/load] Decoded JSON length:', json.length);
       const obj = JSON.parse(json);
-      if (!obj || typeof obj !== 'object') return null;
-      if (!obj.wikiId || !Array.isArray(obj.leaves)) return null;
-      return migrateToCurrent(obj).state;
-    } catch {
+      if (!obj || typeof obj !== 'object') {
+        console.warn('[Quire/load] parsed value is not an object');
+        return null;
+      }
+      if (!obj.wikiId || !Array.isArray(obj.leaves)) {
+        console.warn('[Quire/load] parsed object missing wikiId or leaves array');
+        return null;
+      }
+      const migrated = migrateToCurrent(obj).state;
+      console.log(
+        '[Quire/load] Parsed state: leaves =', migrated.leaves.length,
+        '· schemaVersion =', migrated.schemaVersion,
+        '· wikiId =', migrated.wikiId,
+      );
+      return migrated;
+    } catch (err) {
+      console.error('[Quire/load] Load failed:', err);
       return null;
     }
   }
