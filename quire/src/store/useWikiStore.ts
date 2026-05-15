@@ -37,7 +37,6 @@ interface UIState {
   onboardingDismissed: boolean;
   remoteUpdateAvailable: boolean;
   saveStatus: SaveStatus;
-  needsIdentity: boolean;
 }
 
 export interface ToastItem {
@@ -96,6 +95,8 @@ export interface WikiStore extends UIState {
   // user ops
   setCurrentUser: (userId: UserID | null) => void;
   addUser: (user: User) => void;
+  /** v1.6.1: set every leaf with null/legacy authorId to the current user. */
+  backfillAttributionToCurrentUser: () => void;
   updateUser: (userId: UserID, patch: Partial<User>) => void;
 
   // settings
@@ -113,7 +114,6 @@ export interface WikiStore extends UIState {
   setOnboardingDismissed: (v: boolean) => void;
   setRemoteUpdateAvailable: (v: boolean) => void;
   setSaveStatus: (s: SaveStatus) => void;
-  setNeedsIdentity: (v: boolean) => void;
 }
 
 function freshState(): WikiState {
@@ -174,7 +174,6 @@ export const useWikiStore = create<WikiStore>((set, get) => {
     toasts: [],
     onboardingDismissed: false,
     remoteUpdateAvailable: false,
-    needsIdentity: false,
     saveStatus: persistence.getStatus(),
 
     hydrate: (s, currentUserId) => {
@@ -515,6 +514,26 @@ export const useWikiStore = create<WikiStore>((set, get) => {
       );
     }),
 
+    backfillAttributionToCurrentUser: persistAfter(() => {
+      const cur = get().currentUserId;
+      if (!cur) return;
+      set((s) => ({
+        leaves: s.leaves.map((l) =>
+          !l.authorId || l.authorId === 'legacy' || l.authorId === LEGACY_USER_ID
+            ? {
+                ...l,
+                authorId: cur,
+                lastEditedBy: l.lastEditedBy || cur,
+                contributors:
+                  l.contributors && l.contributors.length > 0
+                    ? Array.from(new Set([...l.contributors, cur]))
+                    : [cur],
+              }
+            : l,
+        ),
+      }));
+    }),
+
     updateUser: persistAfter((userId: UserID, patch: Partial<User>) => {
       set((s) => ({
         users: s.users.map((u) => (u.id === userId ? { ...u, ...patch } : u)),
@@ -552,7 +571,6 @@ export const useWikiStore = create<WikiStore>((set, get) => {
     setOnboardingDismissed: (v) => set({ onboardingDismissed: v }),
     setRemoteUpdateAvailable: (v) => set({ remoteUpdateAvailable: v }),
     setSaveStatus: (s) => set({ saveStatus: s }),
-    setNeedsIdentity: (v) => set({ needsIdentity: v }),
   };
 });
 

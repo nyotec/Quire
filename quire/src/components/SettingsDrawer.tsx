@@ -11,7 +11,7 @@ import { Icon } from './Icon';
 import { formatRel } from '../lib/utils';
 import { AuthorChip } from './AuthorChip';
 import { USER_COLORS } from '../lib/userColors';
-import { deriveInitials } from '../lib/users';
+import { deriveInitials, makeUser } from '../lib/users';
 import { useShortcuts, shortcutLabel } from '../lib/hotkeys';
 import { LockScreenPreview } from './LockScreenPreview';
 
@@ -43,6 +43,14 @@ interface DrawerProps {
   users: User[];
   authoredCount: number;
   onUpdateUser: (userId: UserID, patch: Partial<User>) => void;
+  onSetCurrentUserId: (userId: UserID) => void;
+  onAddUser: (user: User) => void;
+  onBackfillAttribution: () => void;
+  /** Count of leaves without an authorId (or with 'legacy'). */
+  unattributedLeafCount: number;
+  debugPanelOpen: boolean;
+  onSetDebugPanelOpen: (v: boolean) => void;
+  onShowIntroCardAgain: () => void;
   onShowShortcuts: () => void;
   // Privacy
   protection: ProtectionConfig;
@@ -79,6 +87,13 @@ export function SettingsDrawer({
   users,
   authoredCount,
   onUpdateUser,
+  onSetCurrentUserId,
+  onAddUser,
+  onBackfillAttribution,
+  unattributedLeafCount,
+  debugPanelOpen,
+  onSetDebugPanelOpen,
+  onShowIntroCardAgain,
   onShowShortcuts,
   protection,
   autolock,
@@ -113,14 +128,18 @@ export function SettingsDrawer({
           </button>
         </div>
         <div className="q-drawer-body">
-          {currentUser && (
-            <IdentitySection
-              user={currentUser}
-              users={users}
-              authoredCount={authoredCount}
-              onUpdate={(patch) => onUpdateUser(currentUser.id, patch)}
-            />
-          )}
+          <AuthorAttributionSection
+            settings={settings}
+            currentUser={currentUser}
+            users={users}
+            authoredCount={authoredCount}
+            onSetSetting={setSetting}
+            onSetCurrentUserId={onSetCurrentUserId}
+            onAddUser={onAddUser}
+            onUpdateUser={(id, patch) => onUpdateUser(id, patch)}
+            onBackfillAttribution={onBackfillAttribution}
+            unattributedLeafCount={unattributedLeafCount}
+          />
 
           <Section label="Theme">
             <Row label="Mode">
@@ -326,11 +345,20 @@ export function SettingsDrawer({
           </Section>
 
           <Section label="About">
-            <div className="q-drawer-info">Quire v1.2.1 — single-file notebook</div>
+            <div className="q-drawer-info">Quire v1.6.1 — single-file notebook</div>
             <div className="q-drawer-info">
               All your data lives inside this HTML file. Email it, drop it on a USB, or open it
               from a folder — it just works.
             </div>
+            <Row label="Show debug info">
+              <Toggle value={debugPanelOpen} onChange={onSetDebugPanelOpen} />
+            </Row>
+            <button
+              className="q-drawer-btn"
+              onClick={onShowIntroCardAgain}
+            >
+              <Icon name="dot" size={11} /> Show intro card again
+            </button>
           </Section>
         </div>
       </aside>
@@ -711,6 +739,135 @@ function PrivacySection({
       <button className="q-drawer-btn" onClick={onLockNow}>
         <Icon name="lock" size={11} /> Lock now
       </button>
+    </div>
+  );
+}
+
+function AuthorAttributionSection({
+  settings,
+  currentUser,
+  users,
+  authoredCount,
+  onSetSetting,
+  onSetCurrentUserId,
+  onAddUser,
+  onUpdateUser,
+  onBackfillAttribution,
+  unattributedLeafCount,
+}: {
+  settings: Settings;
+  currentUser: User | null;
+  users: User[];
+  authoredCount: number;
+  onSetSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+  onSetCurrentUserId: (userId: UserID) => void;
+  onAddUser: (user: User) => void;
+  onUpdateUser: (userId: UserID, patch: Partial<User>) => void;
+  onBackfillAttribution: () => void;
+  unattributedLeafCount: number;
+}) {
+  const [name, setName] = useState('');
+  const [initials, setInitials] = useState('');
+  const [touchedInitials, setTouchedInitials] = useState(false);
+  // Derive initials from name unless the user has typed their own
+  useEffect(() => {
+    if (!touchedInitials) setInitials(deriveInitials(name));
+  }, [name, touchedInitials]);
+
+  const onToggle = (v: boolean) => {
+    onSetSetting('showAuthorAttribution', v);
+  };
+  const onCreateUser = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const u = makeUser(trimmed, initials.trim() || undefined, users);
+    onAddUser(u);
+    onSetCurrentUserId(u.id);
+    setName('');
+    setInitials('');
+    setTouchedInitials(false);
+  };
+
+  return (
+    <div className="q-drawer-sect">
+      <div className="q-drawer-sect-h">Author attribution</div>
+      <Row label="Show author chips on leaves">
+        <Toggle value={settings.showAuthorAttribution} onChange={onToggle} />
+      </Row>
+      <div className="q-drawer-info">
+        When enabled, each leaf shows who created and last edited it. Useful for
+        wikis shared with multiple people. Most solo users leave this off.
+      </div>
+
+      {settings.showAuthorAttribution && (
+        <>
+          {currentUser ? (
+            <IdentitySection
+              user={currentUser}
+              users={users}
+              authoredCount={authoredCount}
+              onUpdate={(patch) => onUpdateUser(currentUser.id, patch)}
+            />
+          ) : (
+            <div className="q-id-edit" style={{ marginTop: 8 }}>
+              <div className="q-drawer-info">
+                Set your name and initials so leaves you edit are attributed
+                to you.
+              </div>
+              <div className="q-id-edit-row">
+                <input
+                  type="text"
+                  placeholder="Your name"
+                  value={name}
+                  maxLength={40}
+                  onChange={(e) => setName(e.target.value)}
+                />
+                <input
+                  type="text"
+                  placeholder="Initials"
+                  className="q-id-initials"
+                  value={initials}
+                  maxLength={3}
+                  onChange={(e) => {
+                    setInitials(e.target.value);
+                    setTouchedInitials(true);
+                  }}
+                />
+              </div>
+              <button
+                className="q-btn-primary"
+                onClick={onCreateUser}
+                disabled={!name.trim()}
+                style={
+                  !name.trim()
+                    ? { opacity: 0.5, pointerEvents: 'none' }
+                    : undefined
+                }
+              >
+                Save name
+              </button>
+            </div>
+          )}
+
+          {currentUser && unattributedLeafCount > 0 && (
+            <button
+              className="q-drawer-btn"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Apply you as the author of ${unattributedLeafCount} existing leaves? This cannot be undone.`,
+                  )
+                ) {
+                  onBackfillAttribution();
+                }
+              }}
+            >
+              <Icon name="edit" size={11} /> Backfill attribution (
+              {unattributedLeafCount} leaves)
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }

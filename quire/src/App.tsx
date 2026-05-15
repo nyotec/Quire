@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, DragEvent } from 'react';
 import { useCurrentUser, useWikiStore } from './store/useWikiStore';
 import { persistence } from './store/persistence';
-import { welcomeLeaf } from './seed/welcome';
+// welcomeLeaf seeded default removed in v1.6.1 — empty initial state instead
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { LeafCard } from './components/LeafCard';
@@ -9,7 +9,7 @@ import { CommandPalette, PaletteCommand } from './components/CommandPalette';
 import { SettingsDrawer } from './components/SettingsDrawer';
 import { ToastStack } from './components/Toast';
 import { Icon } from './components/Icon';
-import { UserOnboardingModal } from './components/UserOnboardingModal';
+// UserOnboardingModal removed in v1.6.1 — author attribution is now opt-in
 import { AuthorChip } from './components/AuthorChip';
 import { TasksView } from './components/TasksView';
 import { ShortcutHelpDialog } from './components/ShortcutHelpDialog';
@@ -19,7 +19,8 @@ import { ChangePasswordDialog } from './components/ChangePasswordDialog';
 import { SidebarDrawer } from './components/SidebarDrawer';
 import { ImportDialog } from './components/ImportDialog';
 import { ExportJSONDialog } from './components/ExportJSONDialog';
-import { WelcomeScreen } from './components/WelcomeScreen';
+import { IntroCard } from './components/IntroCard';
+import { DebugPanel } from './components/DebugPanel';
 import {
   FolderContextMenu,
   useFolderContextMenuState,
@@ -48,7 +49,7 @@ import {
 import { buildIndex, tagCounts } from './lib/wikilinks';
 import { formatBytes, formatRel, uuid } from './lib/utils';
 import { ShortcutAction, setShortcutsSuppressed, useShortcuts } from './lib/hotkeys';
-import { findUser, leafCountsByAuthor, makeUser, migrateToV2 } from './lib/users';
+import { findUser, leafCountsByAuthor, migrateToV2 } from './lib/users';
 import { migrateToV3 } from './lib/migrate';
 import { ActivityMonitor } from './lib/activityMonitor';
 import {
@@ -189,7 +190,6 @@ export default function App() {
     onboardingDismissed,
     saveStatus,
     remoteUpdateAvailable,
-    needsIdentity,
     protection,
     autolock,
   } = store;
@@ -214,7 +214,10 @@ export default function App() {
     encrypted: number;
     masterProtected: boolean;
   } | null>(null);
-  const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const [introCardVariant, setIntroCardVariant] = useState<
+    'seeded' | 'empty' | null
+  >(null);
+  const [debugPanelOpen, setDebugPanelOpen] = useState(false);
   const [dropOverlayActive, setDropOverlayActive] = useState(false);
   const folderMenu = useFolderContextMenuState();
   const [folderEncryptTarget, setFolderEncryptTarget] = useState<string | null>(null);
@@ -721,7 +724,7 @@ export default function App() {
       const tier = persistence.detectTier();
       const fromHTML = persistence.loadFromHTML();
       // First-run detection: data block was missing/empty AND no IDB draft.
-      const isFirstRun = !fromHTML;
+      void fromHTML; // first-run determination has moved to the IDB welcome flag check
       let baseState: WikiState =
         fromHTML ??
         migrateToV3(
@@ -757,22 +760,50 @@ export default function App() {
           savedId && chosen.users && chosen.users.some((u) => u.id === savedId);
         if (!userExists) savedId = null;
         store.hydrate(chosen, savedId);
-        if (!savedId) {
-          useWikiStore.getState().setNeedsIdentity(true);
-        }
+        // NOTE: identity onboarding modal removed in v1.6.1. Author attribution
+        // is now an opt-in Settings → "Author attribution" toggle. We don't
+        // call setNeedsIdentity even if savedId is null.
+        void savedId;
         const seenHint = await persistence.getMeta<boolean>('hint:shortcuts');
         setShortcutHintShown(!!seenHint);
+        const debugFlag = await persistence.getMeta<boolean>('debug:enabled');
+        setDebugPanelOpen(!!debugFlag);
         setBaselineLeafCount(chosen.leaves.length);
         setHydrated(true);
-        // First-run welcome screen: empty initial state, no draft, no
-        // wiki-master password (otherwise the lock screen runs first).
-        if (
-          isFirstRun &&
-          !usedDraft &&
-          chosen.leaves.length === 0 &&
-          chosen.protection.mode !== 'password'
-        ) {
-          setWelcomeOpen(true);
+        // ─── Intro card logic (v1.6.1) ───────────────────────────────────
+        // Show the card based on the welcome:{wikiId} flag, not on first-run
+        // status. The variant depends on whether the wiki has content.
+        if (chosen.protection.mode === 'password') {
+          // Master-password lock screen handles its own UX; no intro card.
+          setIntroCardVariant(null);
+        } else {
+          const flag = await persistence.getMeta<{ dismissed: boolean }>(
+            `welcome:${chosen.wikiId}`,
+          );
+          if (flag?.dismissed) {
+            setIntroCardVariant(null);
+          } else if (chosen.leaves.length > 0) {
+            // First boot for this wiki on this browser AND content is present.
+            // Could be (a) fresh seeded wiki on quire.one, or (b) a v1.6 user
+            // who hasn't had the dismissal flag set yet. Per spec: option (b)
+            // should NOT see the card, so we set the flag silently. Heuristic:
+            // if the wiki was already auto-saved at least once (i.e. there is
+            // a draft or stored handle), it's an existing user — silence flag.
+            const handleExists = await persistence.hasStoredHandle(chosen.wikiId);
+            const draftExists = !!(await persistence.loadDraftFromIDB(chosen.wikiId));
+            if (usedDraft || handleExists || draftExists) {
+              await persistence.setMeta(`welcome:${chosen.wikiId}`, {
+                dismissed: true,
+                dismissedAt: new Date().toISOString(),
+              });
+              setIntroCardVariant(null);
+            } else {
+              setIntroCardVariant('seeded');
+            }
+          } else {
+            // Empty wiki → empty variant.
+            setIntroCardVariant('empty');
+          }
         }
       };
 
@@ -981,7 +1012,12 @@ export default function App() {
       store.applyMergedState(merged);
       setImportDialogOpen(false);
       setImportInitialFile(null);
-      setWelcomeOpen(false);
+      setIntroCardVariant(null);
+      // Persist the welcome dismissal since the user has now imported content
+      void persistence.setMeta(`welcome:${merged.wikiId}`, {
+        dismissed: true,
+        dismissedAt: new Date().toISOString(),
+      });
       useWikiStore.getState().pushToast({
         message: `Imported ${merged.leaves.length} leaves.`,
         ttl: 6000,
@@ -1015,6 +1051,25 @@ export default function App() {
       });
     }
   }, [hydrated, shortcutHintShown, baselineLeafCount, leaves.length]);
+
+  // ─── window.quireDebug (only while debug panel enabled) ────────────────
+  useEffect(() => {
+    if (!debugPanelOpen) {
+      delete (window as any).quireDebug;
+      return;
+    }
+    (window as any).quireDebug = {
+      state: () => useWikiStore.getState(),
+      status: () => persistence.getStatus(),
+      forceLoad: () => persistence.loadFromHTML(),
+      forceSave: () =>
+        persistence.save(useWikiStore.getState().getPersistableState()),
+      inspectDataBlock: () => document.getElementById('quire-data'),
+    };
+    return () => {
+      delete (window as any).quireDebug;
+    };
+  }, [debugPanelOpen]);
 
   // ─── persistence status subscription ───────────────────────────────────
   useEffect(() => {
@@ -1704,6 +1759,7 @@ export default function App() {
                 onTag={onTagClick}
                 onAuthorClick={onAuthorClick}
                 getUser={getUser}
+                showAttribution={settings.showAuthorAttribution}
                 onChange={(next) => store.updateLeaf(next)}
                 onChangeBody={(id, plaintext) => store.updateLeafBody(id, plaintext)}
                 onToggleEdit={() =>
@@ -1767,9 +1823,36 @@ export default function App() {
         users={users}
         authoredCount={authoredCount}
         onUpdateUser={(id, patch) => store.updateUser(id, patch)}
+        onSetCurrentUserId={(id) => {
+          store.setCurrentUser(id);
+          void persistence.setCurrentUserId(store.wikiId, id);
+        }}
+        onAddUser={(u) => store.addUser(u)}
+        onBackfillAttribution={() => store.backfillAttributionToCurrentUser()}
+        unattributedLeafCount={
+          leaves.filter(
+            (l) =>
+              !l.authorId || l.authorId === 'legacy',
+          ).length
+        }
         onShowShortcuts={() => {
           store.setSettingsOpen(false);
           setHelpOpen(true);
+        }}
+        debugPanelOpen={debugPanelOpen}
+        onSetDebugPanelOpen={(v) => {
+          setDebugPanelOpen(v);
+          void persistence.setMeta('debug:enabled', v);
+        }}
+        onShowIntroCardAgain={() => {
+          void persistence.setMeta(
+            `welcome:${useWikiStore.getState().wikiId}`,
+            { dismissed: false },
+          );
+          setIntroCardVariant(
+            useWikiStore.getState().leaves.length > 0 ? 'seeded' : 'empty',
+          );
+          store.setSettingsOpen(false);
         }}
         protection={protection}
         autolock={autolock}
@@ -1907,30 +1990,36 @@ export default function App() {
         </div>
       )}
 
-      <UserOnboardingModal
-        open={hydrated && needsIdentity}
-        onSubmit={(name, initials) => {
-          const u = makeUser(name, initials, useWikiStore.getState().users);
-          store.addUser(u);
-          store.setCurrentUser(u.id);
-          store.setNeedsIdentity(false);
-          persistence.setCurrentUserId(useWikiStore.getState().wikiId, u.id);
-          useWikiStore.getState().pushToast({
-            message: `Welcome, ${u.name}. Your notes will be marked with ${u.initials}.`,
-            ttl: 5000,
-          });
-        }}
-      />
-
       <ShortcutHelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
 
-      <WelcomeScreen
-        open={welcomeOpen}
-        onStartFresh={() => setWelcomeOpen(false)}
+      <IntroCard
+        open={introCardVariant !== null}
+        variant={introCardVariant || 'seeded'}
+        onDismiss={() => {
+          if (introCardVariant !== null) {
+            void persistence.setMeta(`welcome:${useWikiStore.getState().wikiId}`, {
+              dismissed: true,
+              dismissedAt: new Date().toISOString(),
+            });
+          }
+          setIntroCardVariant(null);
+        }}
         onImport={() => {
           setImportInitialFile(null);
           setImportDialogOpen(true);
-          // keep welcome open behind the import dialog; close it on successful apply
+          // Keep the card visible behind the import dialog so the user can
+          // cancel and still see it.
+        }}
+        onCreateNote={() => {
+          store.newLeaf('');
+        }}
+      />
+
+      <DebugPanel
+        open={debugPanelOpen}
+        onClose={() => {
+          setDebugPanelOpen(false);
+          void persistence.setMeta('debug:enabled', false);
         }}
       />
 

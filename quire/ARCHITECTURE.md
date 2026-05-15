@@ -5,6 +5,44 @@ React, all components, all CSS, and the user's notes data — is bundled into on
 HTML file via Vite's `vite-plugin-singlefile`. There are no runtime requests; it
 works fully offline from `file://`.
 
+## Data-block replacement (v1.6.1)
+
+Saving rewrites the embedded `<script id="quire-data">` block in place. Through
+v1.6 this was a regex `String.replace`. That proved fragile across browsers —
+on Microsoft Edge the save grew the file on disk but reopening read the wiki as
+empty, because the regex did not reliably match the serialized output (attribute
+ordering and `outerHTML` differences). v1.6.1 replaces it with a DOMParser-based
+rewrite: parse the current document, set the script element's `textContent` and
+`data-encoding` attribute directly, re-serialize via `outerHTML`. `textContent`
+(never `innerHTML`) is used so the compressed payload is never re-parsed as HTML.
+A regex fallback remains only for the impossible case where the script element
+is missing, and it logs `CRITICAL`. Encoding constants (`lz-utf16` / `plain`)
+live in one module (`src/lib/lzcompress.ts`) referenced by both save and load,
+so encoding-mismatch bugs cannot recur. Both paths log `[Quire/save]` and
+`[Quire/load]` diagnostics permanently.
+
+## Author attribution (opt-in, v1.6.1)
+
+Author attribution (the v1.1 multi-user system) is no longer activated by a
+forced first-run modal. New wikis ship with an empty `users` array and
+`settings.showAuthorAttribution: false`; leaf headers render with no author
+chip. The user opts in via Settings → Author attribution, which creates a
+`User` record inline (no modal) and can backfill existing leaves. Wikis that
+already carry ≥2 non-legacy users auto-enable the setting during migration, so
+collaborative wikis are undisrupted. `AuthorChip` returns `null` for a missing
+user instead of a `?` placeholder; `LeafCard` skips the chip block entirely when
+the setting is off.
+
+## First-run intro card (v1.6.1)
+
+The blocking "Start fresh / Import" `WelcomeScreen` is gone. In its place a
+non-blocking `IntroCard` is layered bottom-right over the (possibly seeded)
+content. It has two variants — `seeded` (content present) and `empty` — chosen
+by leaf count. Dismissal writes a `welcome:{wikiId}` flag to the IDB meta store.
+Existing v1.6 wikis that have content but no flag get the flag set silently on
+first v1.6.1 boot (detected via a stored handle or existing draft), so upgraders
+never see the card.
+
 ## JSON import / export envelope (v1.6)
 
 The single canonical mechanism for moving content between Quire files is
