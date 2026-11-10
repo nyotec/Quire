@@ -1,0 +1,42 @@
+{
+  "name": "@quire/mcp-server",
+  "version": "1.7.0",
+  "description": "MCP server for Quire — lets AI agents read from and append notes to your single-file Quire wikis.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "quire-mcp": "bin/quire-mcp"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "bin",
+    "example-config.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "test": "npm run build && node tests/smoke.mjs && node tests/protocol.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "quire",
+    "mcp",
+    "model-context-protocol",
+    "notes",
+    "wiki"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "lz-string": "^1.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

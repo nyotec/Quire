@@ -78,6 +78,50 @@ DOMParser-based replacement. These tests would have caught the bug.
 3. "Copy debug info to clipboard" → paste → plain-text block.
 4. Toggle off → panel disappears; `window.quireDebug` is `undefined`.
 
+## v1.7 — source attribution
+
+1. Import (or hand-edit) a leaf whose data carries a `source` object, e.g.
+   `{ "type": "jira", "id": "WMBT-1234", "url": "https://jira/…",
+   "capturedAt": "<iso>" }`. The leaf renders a footer line below the body:
+   `↗ From Jira · WMBT-1234 · captured 2h ago`.
+2. With `source.url` set, the line is a link — clicking opens the URL in a new
+   tab (`target="_blank"`, `rel="noopener noreferrer"`) and does **not** focus
+   or toggle the leaf.
+3. With no `source.url`, the same line renders as plain dim text (not a link).
+4. A leaf with no `source` shows no source footer. Entering edit mode hides the
+   source footer; leaving edit mode restores it.
+5. `source.id` absent but `source.title` present → the middle segment shows the
+   title instead of the id.
+
+## v1.7 — agent attribution (always visible)
+
+1. A wiki with `showAuthorAttribution: false` and a leaf authored by a user
+   whose `isAgent: true` → the agent chip (🤖 or configured icon) is **still**
+   shown on that leaf; human-authored leaves show no chip.
+2. Hover the agent chip → tooltip reads `Created by agent: <name>`.
+3. Turn `showAuthorAttribution` on → human chips appear alongside; agent chips
+   unchanged.
+4. A leaf created by a human and last-edited by an agent (or vice-versa) shows
+   the author→editor pair with the agent side rendered as an agent chip even
+   while attribution is off.
+
+## v1.7 — external file change detection (Tier A, Chromium)
+
+1. Open a Tier A wiki connected to `quire.html`. In another program, append a
+   byte to the file (simulating an MCP write). Within ~10s a sticky toast
+   appears: `🔔 This wiki was updated elsewhere · [Reload]`.
+2. With no unsaved local edits, click **Reload** → the on-disk version is
+   adopted; a `Reloaded the latest version from disk` toast confirms.
+3. Make a local edit (status pill shows unsaved), then trigger an external
+   change and click **Reload** → the merge/conflict dialog opens seeded with
+   the disk version; resolving it merges as an import would.
+4. With unsaved local edits, click the toast's **✕ (Dismiss)** → a confirmation
+   prompt appears; cancelling keeps the toast, confirming dismisses it.
+5. Saving from this tab does **not** raise the toast (own-save mtime is
+   recorded within the 1s tolerance window).
+6. On a browser exposing `FileSystemObserver`, the change is detected without
+   waiting for the 10s poll; on others the poll path is used.
+
 ## No regressions
 
 Re-run the headline checks from prior versions in **Edge**:
@@ -86,3 +130,5 @@ Re-run the headline checks from prior versions in **Edge**:
 - v1.5 folder encryption — encrypted folders survive a save/load cycle.
 - v1.1 multi-user — wikis with multiple users render chips correctly.
 - v1.6 schema migration — older-format JSON imports upgrade transparently.
+- v1.7 schema bump — a v4 (schemaVersion 4) file opens and upgrades to 5 with
+  no data loss; leaves without `source` render unchanged.

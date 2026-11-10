@@ -726,6 +726,31 @@ kbd {
 }
 .q-tag-i:hover { text-decoration: underline; }
 
+/* ─── leaf source attribution (v1.7) ──────────────────────────────── */
+.q-leaf-source {
+  flex: 0 0 auto;
+  padding: 7px var(--q-pad) 9px;
+  border-top: 0.5px dashed var(--q-line);
+}
+.q-source-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--q-font-mono);
+  font-size: 11px;
+  color: var(--q-dim);
+  letter-spacing: 0.01em;
+  text-decoration: none;
+}
+a.q-source-indicator:hover {
+  color: var(--q-accent);
+  text-decoration: underline;
+}
+.q-source-arrow {
+  color: var(--q-accent);
+  font-weight: 600;
+}
+
 /* ─── leaf footer (backlinks) ─────────────────────────────────────── */
 .q-leaf-foot {
   flex: 0 0 auto;
@@ -1163,6 +1188,14 @@ kbd {
   margin: 0 1px;
   line-height: 1;
 }
+/* v1.7: agent chips carry an icon instead of initials and read distinctly. */
+.q-author-chip-agent {
+  border-style: dashed;
+  font-size: 11px;
+  padding: 0 5px;
+  letter-spacing: 0;
+}
+.q-author-chip-agent.q-author-chip-md { font-size: 13px; }
 
 /* ─── people sidebar rows ─────────────────────────────────────── */
 .q-people-row {

@@ -120,13 +120,24 @@ export function LeafCard({
   const editor = getUser(leaf.lastEditedBy);
   const contributorCount = (leaf.contributors || []).length;
   const authorTitle = author
-    ? `Created by ${author.name}${leaf.created ? ' on ' + new Date(leaf.created).toLocaleDateString() : ''}`
+    ? (author.isAgent
+        ? `Created by agent: ${author.name}`
+        : `Created by ${author.name}`) +
+      (leaf.created ? ' on ' + new Date(leaf.created).toLocaleDateString() : '')
     : 'Unknown author';
   const editorTitle = editor
-    ? `Last edited by ${editor.name}, ${formatRel(leaf.edited)}${
-        contributorCount > 1 ? ' · ' + contributorCount + ' contributors' : ''
-      }`
+    ? (editor.isAgent
+        ? `Last edited by agent: ${editor.name}, ${formatRel(leaf.edited)}`
+        : `Last edited by ${editor.name}, ${formatRel(leaf.edited)}`) +
+      (contributorCount > 1 ? ' · ' + contributorCount + ' contributors' : '')
     : 'Unknown editor';
+
+  // v1.7: agent attribution is always visible, even when showAuthorAttribution
+  // is off. User attribution respects the setting. So when the setting is off,
+  // only agent participants keep their chip.
+  const chipAuthor = showAttribution ? author : author?.isAgent ? author : null;
+  const chipEditor = showAttribution ? editor : editor?.isAgent ? editor : null;
+  const showChips = !!(chipAuthor || chipEditor);
 
   return (
     <article
@@ -163,20 +174,20 @@ export function LeafCard({
             <h2 className="q-leaf-title">{leaf.title}</h2>
           )}
           <div className="q-leaf-meta">
-            {showAttribution && (
+            {showChips && (
               <>
                 <AuthorChipPair
-                  author={author}
-                  editor={editor}
+                  author={chipAuthor}
+                  editor={chipEditor}
                   authorTitle={authorTitle}
                   editorTitle={editorTitle}
                   onClickAuthor={(e) => {
                     e.stopPropagation();
-                    if (author) onAuthorClick(author.id);
+                    if (chipAuthor) onAuthorClick(chipAuthor.id);
                   }}
                   onClickEditor={(e) => {
                     e.stopPropagation();
-                    if (editor) onAuthorClick(editor.id);
+                    if (chipEditor) onAuthorClick(chipEditor.id);
                   }}
                 />
                 <span className="q-leaf-meta-sep">·</span>
@@ -252,6 +263,43 @@ export function LeafCard({
           <div className="q-md">{renderMarkdown(bodyText, ctx)}</div>
         )}
       </div>
+
+      {leaf.source &&
+        !editing &&
+        (() => {
+          const src = leaf.source;
+          const typeLabel =
+            src.type.charAt(0).toUpperCase() + src.type.slice(1);
+          const mid = src.id || src.title;
+          const inner = (
+            <>
+              <span className="q-source-arrow" aria-hidden="true">
+                ↗
+              </span>{' '}
+              From {typeLabel}
+              {mid ? <> · {mid}</> : null}
+              {' · captured '}
+              {formatRel(src.capturedAt)}
+            </>
+          );
+          return (
+            <div className="q-leaf-source">
+              {src.url ? (
+                <a
+                  className="q-source-indicator"
+                  href={src.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {inner}
+                </a>
+              ) : (
+                <span className="q-source-indicator">{inner}</span>
+              )}
+            </div>
+          );
+        })()}
 
       {focused && showBacklinks && backlinks.length > 0 && !editing && (
         <footer className="q-leaf-foot">

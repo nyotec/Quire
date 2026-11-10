@@ -5,6 +5,46 @@ React, all components, all CSS, and the user's notes data — is bundled into on
 HTML file via Vite's `vite-plugin-singlefile`. There are no runtime requests; it
 works fully offline from `file://`.
 
+## MCP capture & source attribution (v1.7)
+
+v1.7 opens the file to AI agents without compromising the single-file model.
+Two companions live outside the app — `../mcp` (the MCP server) and `../skill`
+(the capture skill) — and ship independently of it.
+
+**Schema v4 → v5** (`src/lib/migrations.ts`, `migrateV4ToV5`). Both additions
+are optional, so the migration only bumps the version marker:
+
+- `Leaf.source?: LeafSource` — `{ type, id?, url?, title?, capturedAt,
+  capturedBy? }`, source attribution for a captured note. `LeafCard` renders a
+  footer line (`↗ From Jira · WMBT-1234 · captured 2h ago`) below the body and
+  above backlinks; it is a real link (`target="_blank" rel="noopener
+  noreferrer"`) when `source.url` is set, plain dim text otherwise, and hidden
+  in edit mode.
+- `User.isAgent?: boolean` — marks an agent's User record. `AuthorChip` renders
+  an agent chip with the configured glyph (stored in `initials`, e.g. 🤖) and a
+  *"Created by agent"* tooltip. In `LeafCard`, `chipAuthor`/`chipEditor` keep
+  agent chips visible **even when `settings.showAuthorAttribution` is off** —
+  human attribution respects the setting, agent attribution is always shown.
+
+**External change detection** (Tier A only, `src/store/persistence.ts`). Because
+an external process (the MCP server) can now edit the connected file, the app
+watches it: `startWatchingFile` seeds the file's `lastModified`, then either
+observes it via the File System Observer API (Chromium 129+) or polls every 10s.
+`checkFileChanged` fires `onExternalChange` when the mtime advances past the
+last known value by more than a 1s tolerance (the own-save race — `saveTierA`
+records the post-write mtime via `recordFileMtime`). `App` surfaces a sticky
+reload toast; `reloadStateFromFile` re-reads and parses the disk HTML
+(`parseHTMLString`, the same extraction as `loadFromHTML` but on a given
+string). A clean reload adopts the disk state; with unsaved edits it feeds the
+disk state into the existing `ImportDialog` via a new in-memory `initialState`
+prop, reusing the v1.6 conflict UI. Dismissing with unsaved edits routes through
+a `Toast.onBeforeDismiss` confirmation guard.
+
+The MCP server deliberately does **not** reuse app code: it re-encodes the data
+block with the same `lz-string` UTF-16 codec and a surgical regex replacement so
+written files remain byte-compatible, and it refuses encrypted wikis entirely in
+v1.7 (it never holds a passphrase).
+
 ## Data-block replacement (v1.6.1)
 
 Saving rewrites the embedded `<script id="quire-data">` block in place. Through

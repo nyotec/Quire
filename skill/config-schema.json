@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Quire capture skill config",
+  "description": "User preferences for how the quire-capture skill routes and confirms notes. Lives at ~/.config/quire-mcp/skill-config.json.",
+  "type": "object",
+  "properties": {
+    "onboarded": {
+      "type": "boolean",
+      "description": "True once first-run onboarding has completed."
+    },
+    "organizationModel": {
+      "enum": ["topics", "files", "flat"],
+      "description": "topics = folders within a notebook; files = different notebooks by subject; flat = one notebook, tags only."
+    },
+    "defaultFile": {
+      "type": "string",
+      "description": "Configured MCP file name to capture into by default."
+    },
+    "topics": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "The user's main topics/areas (seed folder names)."
+    },
+    "confirmation": {
+      "enum": ["always", "ambiguous", "silent"],
+      "description": "always = confirm every save; ambiguous = confirm only when routing is unclear; silent = save and report."
+    },
+    "digest": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "file": { "type": "string", "description": "Configured file name for digests." },
+        "folder": { "type": "string", "description": "Folder/topic to file digests under." },
+        "sections": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Ordered section headings for the digest leaf."
+        }
+      },
+      "additionalProperties": false
+    },
+    "lastDigestAt": {
+      "type": ["string", "null"],
+      "description": "ISO timestamp of the last digest run, or null."
+    }
+  },
+  "required": ["onboarded", "organizationModel", "confirmation"],
+  "additionalProperties": false
+}

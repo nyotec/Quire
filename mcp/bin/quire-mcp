@@ -1,0 +1,9 @@
+#!/usr/bin/env node
+// Launcher for the Quire MCP server. The real entry point is the compiled
+// ES module in dist/. Keeping the bin a thin shim means `npx @quire/mcp-server`
+// and a global install both resolve to the same built code.
+import('../dist/index.js').catch((err) => {
+  // eslint-disable-next-line no-console
+  console.error('[quire-mcp] failed to start:', err);
+  process.exit(1);
+});

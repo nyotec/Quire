@@ -1,0 +1,21 @@
+{
+  "files": {
+    "work": {
+      "path": "~/notes/work.quire.html",
+      "description": "Work notebook — projects, meetings, decisions, tasks.",
+      "default": true
+    },
+    "personal": {
+      "path": "~/notes/personal.quire.html",
+      "description": "Personal notebook — ideas, journal, reading notes."
+    }
+  },
+  "allowFileCreation": false,
+  "fileCreationBaseDir": "~/notes",
+  "agentIdentity": {
+    "name": "Claude",
+    "icon": "🤖",
+    "color": "#7c3aed"
+  },
+  "refuseEncrypted": true
+}

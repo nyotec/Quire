@@ -345,7 +345,7 @@ export function SettingsDrawer({
           </Section>
 
           <Section label="About">
-            <div className="q-drawer-info">Quire v1.6.1 — single-file notebook</div>
+            <div className="q-drawer-info">Quire v1.7 — single-file notebook</div>
             <div className="q-drawer-info">
               All your data lives inside this HTML file. Email it, drop it on a USB, or open it
               from a folder — it just works.

@@ -39,7 +39,7 @@ function getDB(): Promise<IDBPDatabase<any>> {
 function serializeWikiState(state: WikiState): string {
   // Strip transient UI fields. We only persist data + settings + open/focused IDs.
   const persisted: WikiState = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     wikiId: state.wikiId,
     leaves: state.leaves,
     openIds: state.openIds,
@@ -143,6 +143,19 @@ export class WikiPersistence {
   public onRemoteUpdate: ((tier: Tier) => void) | null = null;
   public onRemoteUserUpdate: ((userId: UserID) => void) | null = null;
   public onRemoteLock: (() => void) | null = null;
+
+  // ─── external (on-disk) change detection — Tier A only ─────────────────
+  /** Last on-disk mtime we are aware of (ms). Null until first observed. */
+  private lastKnownFileMtime: number | null = null;
+  /** Polling timer when FileSystemObserver is unavailable. */
+  private fileWatchTimer: ReturnType<typeof setInterval> | null = null;
+  /** FileSystemObserver instance when available (Chromium 129+). */
+  private fileObserver: any = null;
+  /** Tolerance for the own-save race: a bump within this window of our own
+   *  write is treated as our save, not an external edit. */
+  private readonly OWN_SAVE_TOLERANCE_MS = 1000;
+  /** Fired when the connected file is changed by another process. */
+  public onExternalChange: (() => void) | null = null;
 
   constructor() {
     this.status.tier = this.detectTier();
@@ -370,6 +383,127 @@ export class WikiPersistence {
     }
   }
 
+  // ─── external change detection (Tier A) ───────────────────────────────
+  /** Read the connected file's current mtime and remember it as "ours". */
+  private async recordFileMtime(wikiId: string): Promise<void> {
+    try {
+      const handle = await this.getStoredHandle(wikiId);
+      if (!handle) return;
+      const file = await handle.getFile();
+      this.lastKnownFileMtime = file.lastModified;
+    } catch {
+      // ignore — handle may be momentarily unavailable
+    }
+  }
+
+  /**
+   * Start watching the connected file for edits made outside this tab
+   * (e.g. an MCP agent writing a captured note). Prefers the File System
+   * Observer API (Chromium 129+) and falls back to a 10s mtime poll.
+   * No-op outside Tier A. Safe to call repeatedly — it resets any prior watch.
+   */
+  async startWatchingFile(wikiId: string): Promise<void> {
+    if (this.status.tier !== 'A') return;
+    this.stopWatchingFile();
+    // Seed the baseline so the first poll has something to compare against.
+    await this.recordFileMtime(wikiId);
+
+    const ObserverCtor = (window as any).FileSystemObserver;
+    if (typeof ObserverCtor === 'function') {
+      try {
+        const handle = await this.getStoredHandle(wikiId);
+        if (handle) {
+          this.fileObserver = new ObserverCtor(() => {
+            void this.checkFileChanged(wikiId);
+          });
+          await this.fileObserver.observe(handle);
+          return; // observer active — no polling needed
+        }
+      } catch {
+        this.fileObserver = null; // fall through to polling
+      }
+    }
+
+    this.fileWatchTimer = setInterval(() => {
+      void this.checkFileChanged(wikiId);
+    }, 10_000);
+  }
+
+  stopWatchingFile(): void {
+    if (this.fileWatchTimer) {
+      clearInterval(this.fileWatchTimer);
+      this.fileWatchTimer = null;
+    }
+    if (this.fileObserver) {
+      try {
+        this.fileObserver.disconnect();
+      } catch {
+        // ignore
+      }
+      this.fileObserver = null;
+    }
+  }
+
+  /** Compare the on-disk mtime against our last-known value; fire if it moved. */
+  private async checkFileChanged(wikiId: string): Promise<void> {
+    if (this.isWriting) return; // our own write is in flight
+    try {
+      const handle = await this.getStoredHandle(wikiId);
+      if (!handle) return;
+      const file = await handle.getFile();
+      const mtime = file.lastModified;
+      if (this.lastKnownFileMtime == null) {
+        this.lastKnownFileMtime = mtime;
+        return;
+      }
+      if (mtime > this.lastKnownFileMtime + this.OWN_SAVE_TOLERANCE_MS) {
+        // Advance the baseline so we only notify once per external edit.
+        this.lastKnownFileMtime = mtime;
+        this.onExternalChange?.();
+      }
+    } catch {
+      // Transient read failure — try again on the next tick.
+    }
+  }
+
+  /**
+   * Re-read the connected file from disk and parse it into a WikiState.
+   * Used by the reload-from-disk flow after an external change is detected.
+   */
+  async reloadStateFromFile(wikiId: string): Promise<WikiState | null> {
+    const handle = await this.getStoredHandle(wikiId);
+    if (!handle) return null;
+    const file = await handle.getFile();
+    this.lastKnownFileMtime = file.lastModified;
+    const html = await file.text();
+    return this.parseHTMLString(html);
+  }
+
+  /** Extract and migrate the embedded data block from an arbitrary HTML string. */
+  parseHTMLString(html: string): WikiState | null {
+    try {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const el = doc.getElementById('quire-data');
+      if (!el) return null;
+      const encoding = el.getAttribute('data-encoding') || 'plain';
+      const raw = el.textContent ?? '';
+      if (!raw || raw === '{}') return null;
+      let json: string;
+      try {
+        json = decompress(raw, encoding);
+      } catch {
+        json = raw;
+      }
+      const obj = JSON.parse(json);
+      if (!obj || typeof obj !== 'object') return null;
+      if (!obj.wikiId || !Array.isArray(obj.leaves)) return null;
+      return migrateToCurrent(obj).state;
+    } catch (err) {
+      console.error('[Quire/reload] parseHTMLString failed', err);
+      return null;
+    }
+  }
+
   // ─── tier B — manual download ─────────────────────────────────────────
   downloadHTML(html: string, filename: string): void {
     const blob = new Blob([html], { type: 'text/html' });
@@ -441,6 +575,9 @@ export class WikiPersistence {
     try {
       const html = rebuildHTML(state);
       await this.writeToHandle(state.wikiId, html);
+      // Capture the file's mtime post-write so the external-change watcher
+      // does not flag our own save as a foreign edit.
+      await this.recordFileMtime(state.wikiId);
       const now = new Date().toISOString();
       this.status = {
         tier: 'A',
