@@ -240,6 +240,56 @@ A wiki created before v1.1 (no users registry) gets a synthetic *Legacy author* 
 
 **Available since**: v1.1
 
+### AI capture & source attribution (new in v1.7)
+
+Quire can now be written to by AI agents — as a helper to your note-taking, not
+a replacement. Two companion pieces ship alongside the app, each independently:
+
+- **[`mcp/`](mcp) — the Quire MCP server.** A standalone
+  [MCP](https://modelcontextprotocol.io) server that reads from and appends
+  notes to your `.html` wikis using the exact lz-string encoding the app uses,
+  with atomic writes that leave the app shell untouched. Five tools:
+  `list_files`, `list_topics`, `search_leaves`, `create_leaf`, `create_file`.
+  It **refuses encrypted wikis** in v1.7 — the agent never holds your passphrase.
+- **[`skill/`](skill) — the Quire Capture skill.** A Claude skill that decides
+  *where* a note belongs and *whether* to confirm, then captures via the MCP
+  server. Triggers on "note this", "save to Quire", "/capture", and runs a
+  morning **digest** on a schedule.
+
+In the app itself, v1.7 adds:
+
+#### Agent attribution
+
+A leaf written by an agent is attributed to a `User` with `isAgent: true`, shown
+with the agent's configured icon (🤖) instead of initials and a *"Created by
+agent"* tooltip. **Agent chips stay visible even when author attribution is
+turned off** — so agent-written content is always visibly agent-written. Human
+attribution still respects the setting.
+
+**Available since**: v1.7
+
+#### Source links
+
+A captured leaf can carry a `source` ( `{ type, id?, url?, title?, capturedAt }` ).
+The leaf renders a footer line below its body — `↗ From Jira · WMBT-1234 ·
+captured 2h ago` — clickable when a `url` is present (opens in a new tab).
+
+**Available since**: v1.7
+
+#### External change detection
+
+When a wiki is connected to a file (Tier A) and another process edits it — e.g.
+the MCP server capturing a note — Quire notices (a 10s last-modified poll with a
+1s own-save tolerance, upgraded to the File System Observer API where
+available). It surfaces a sticky *"🔔 This wiki was updated elsewhere · [Reload]"*
+toast rather than silently overwriting. Reloading with no local edits adopts the
+disk version; with unsaved edits it reconciles through the import/conflict UI.
+
+**Available since**: v1.7
+
+**Notes & limits**: detection is Tier A only (a connected file). The MCP server
+and skill are opt-in and configured separately under `~/.config/quire-mcp/`.
+
 ### Customisation
 
 | Theme | Accent | Font pair | Density | Layout |
@@ -426,6 +476,8 @@ The embedded data block is a `<script id="quire-data" type="application/json" da
 - **v1**: leaves, openIds, focusedId, settings, lastSaved, wikiId.
 - **v2**: + users registry; leaves carry `authorId`, `lastEditedBy`, `contributors`. Migration auto-creates a *Legacy author* on first read.
 - **v3**: + protection (curtain / password) and autolock config. Leaf bodies become `EncryptedField` in password mode.
+- **v4**: + folders with optional per-folder encryption; leaves carry `folderId` (v1.5).
+- **v5**: + optional `leaf.source` (source attribution) and `user.isAgent` (agent capture). Both optional, so the migration just bumps the version marker (v1.7).
 
 Migrations are forward-only and idempotent. Older builds opening a newer-version file may fail on encrypted bodies (a v1.2 build sees an object instead of a string in `body` and crashes the renderer). Don't downgrade once password mode is enabled.
 
@@ -524,6 +576,7 @@ Issues and pull requests are welcome.
 - **v1.5** — folders + per-folder encryption. Nested folder tree in the sidebar with right-click context menu, breadcrumbs in leaf headers, `:` palette mode for finding folders. Each folder can have its own password (independent of the v1.3 wiki master password); nested folders follow the closest-enclosing-protected-ancestor rule. Schema v3 → v4 migration is forward-only.
 - **v1.6** — JSON import with conflict resolution, formalized export envelope, build-time seeding via `seed.json`, first-run welcome screen with "Start fresh" / "Import JSON". One mechanism (JSON) covers backup, restore, version upgrade, and content seeding for self-hosters. Centralized schema migrations.
 - **v1.6.1** — UX correction & bug fix. Fixes a data-loss bug on Microsoft Edge (regex-based data-block replacement was fragile; now uses a DOMParser-based replacement that works identically across browsers). Author attribution is now opt-in (Settings → Author attribution) rather than a forced first-run modal. The blocking "Start fresh / Import" welcome screen is replaced by a non-blocking intro card layered over the seeded content. Adds a debug panel (Settings → About → Show debug info) and `[Quire/save]` / `[Quire/load]` diagnostic logging.
+- **v1.7** — MCP server & capture skill. Agents can read from and append to wikis as a helper to your note-taking. App adds agent attribution (always-visible 🤖 chips), source links on captured leaves (`↗ From …`), and Tier-A external-change detection (reload toast instead of silent overwrite). Ships the standalone [`@quire/mcp-server`](mcp) (five tools, atomic writes, refuses encrypted wikis) and the [Quire Capture skill](skill) (routing + confirmation + morning digest). Schema v4 → v5 (optional `leaf.source`, `user.isAgent`). The app, server, and skill ship independently.
 
 ## License
 

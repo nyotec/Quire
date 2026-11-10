@@ -1,0 +1,14 @@
+{
+  "onboarded": true,
+  "organizationModel": "topics",
+  "defaultFile": "work",
+  "topics": ["Projects", "Meetings", "Reading", "Ideas"],
+  "confirmation": "ambiguous",
+  "digest": {
+    "enabled": true,
+    "file": "work",
+    "folder": "Digests",
+    "sections": ["Tasks", "Follow-ups", "Reading", "Notes"]
+  },
+  "lastDigestAt": null
+}
