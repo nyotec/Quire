@@ -165,6 +165,7 @@ export interface BacklinkRef {
 }
 
 export type ActiveFilter =
+  | { type: 'all' }
   | { type: 'tag'; value: string }
   | { type: 'author'; value: UserID }
   | { type: 'folder'; value: FolderID; deep: boolean }

@@ -61,8 +61,13 @@ export function touchLeaf(leaf: Leaf, currentUserId: UserID): Leaf {
 /** Migrate a v1 (or undefined-version) WikiState into a v2 state. */
 /** Returns a v2-shape object as `any` so the v3 migrator can extend it. */
 export function migrateToV2(raw: any): any {
-  if (raw && raw.schemaVersion === 2 && Array.isArray(raw.users)) {
-    // Already v2 — but defensive-fill any leaves that lack attribution.
+  if (raw && raw.schemaVersion >= 2 && Array.isArray(raw.users)) {
+    // Already v2 or newer. Pass the state through, only defensively filling
+    // leaves that lack attribution. This MUST NOT fall through to the v1 path
+    // below: that path rebuilds the state from scratch and would wipe the
+    // users registry, every leaf's authorship, folders, protection and
+    // autolock. Preserve the original schemaVersion so the later migrators
+    // recognise it as already-migrated and leave the rest of the state intact.
     const users: User[] = raw.users;
     const fallback =
       users.find((u) => u.id === LEGACY_USER_ID) ||
@@ -78,7 +83,7 @@ export function migrateToV2(raw: any): any {
           : [l.authorId || fallback.id],
     }));
     const usersOut = users.find((u) => u.id === fallback.id) ? users : [fallback, ...users];
-    return { ...raw, leaves, users: usersOut, schemaVersion: 2 };
+    return { ...raw, leaves, users: usersOut };
   }
 
   // v1 (or unknown) → v2 migration.
