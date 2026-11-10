@@ -1,0 +1,11 @@
+{
+  // Quire is a static single-file app, not a Worker script. The Cloudflare
+  // build command emits the bundle to ./dist (index.html), and this config
+  // tells `wrangler versions upload` / `wrangler deploy` to publish that
+  // directory as static assets rather than looking for a Worker entry point.
+  "name": "quire",
+  "compatibility_date": "2026-11-10",
+  "assets": {
+    "directory": "./dist"
+  }
+}
