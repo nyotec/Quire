@@ -8,6 +8,22 @@ export interface User {
   color: string;
   joined: string;
   lastSeen: string;
+  /** v1.7: true when this User represents an AI agent (MCP capture). */
+  isAgent?: boolean;
+}
+
+/**
+ * v1.7: optional source attribution for a leaf. Populated when an MCP agent
+ * captures a note derived from an external source (Jira, Gmail, web, …).
+ * Absent on leaves created in the Quire UI.
+ */
+export interface LeafSource {
+  type: string; // free-form, e.g. "jira", "gmail", "slack", "web", "manual", "digest"
+  id?: string; // source-specific identifier, e.g. "WMBT-1234"
+  url?: string; // clickable link back to the source
+  title?: string; // the source's own title, e.g. the email subject
+  capturedAt: string; // ISO timestamp when the note was captured
+  capturedBy?: string; // free-form identifier for the capturing agent, e.g. "claude-desktop"
 }
 
 export interface EncryptedField {
@@ -54,6 +70,8 @@ export interface Leaf {
   lastEditedBy: UserID;
   contributors: UserID[];
   folderId?: FolderID | null;
+  /** v1.7: source attribution for agent-captured leaves. Undefined on UI-created leaves. */
+  source?: LeafSource;
 }
 
 export type ThemeName = 'paper' | 'ink' | 'mono';
@@ -104,7 +122,7 @@ export interface AutolockConfig {
 }
 
 export interface WikiState {
-  schemaVersion: 4;
+  schemaVersion: 5;
   wikiId: string;
   leaves: Leaf[];
   openIds: LeafID[];

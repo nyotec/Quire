@@ -12,19 +12,29 @@ export function AuthorChip({ user, size = 'sm', title, onClick }: Props) {
   // render nothing. The leaf header still reads cleanly with timestamp + tags.
   if (!user) return null;
   const u = user;
+  const isAgent = !!u.isAgent;
   const style: React.CSSProperties = {
     background: `color-mix(in oklch, ${u.color} 18%, transparent)`,
     borderColor: `color-mix(in oklch, ${u.color} 35%, transparent)`,
     color: `color-mix(in oklch, ${u.color} 90%, black)`,
   };
+  // v1.7: agent chips show the configured icon (e.g. 🤖) in place of initials
+  // and a distinct tooltip. The icon is stored in the `initials` field by the
+  // MCP server, so we just render it as-is.
+  const label = isAgent ? u.initials || '🤖' : u.initials;
+  const tooltip = title || (isAgent ? `Created by agent: ${u.name}` : u.name);
   return (
     <span
-      className={'q-author-chip' + (size === 'md' ? ' q-author-chip-md' : '')}
+      className={
+        'q-author-chip' +
+        (size === 'md' ? ' q-author-chip-md' : '') +
+        (isAgent ? ' q-author-chip-agent' : '')
+      }
       style={style}
-      title={title || `${u.name}`}
+      title={tooltip}
       onClick={onClick}
     >
-      {u.initials}
+      {label}
     </span>
   );
 }

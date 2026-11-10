@@ -45,10 +45,16 @@ export interface ToastItem {
   kind?: 'info' | 'error' | 'success';
   action?: { label: string; run: () => void };
   ttl?: number;
+  /**
+   * Optional guard invoked when the user clicks the toast's close button.
+   * Return false to keep the toast (e.g. to ask for confirmation first).
+   * Not consulted for auto-dismiss (ttl) or action-triggered dismissal.
+   */
+  onBeforeDismiss?: () => boolean;
 }
 
 export interface WikiStore extends UIState {
-  schemaVersion: 4;
+  schemaVersion: 5;
   wikiId: string;
   leaves: Leaf[];
   openIds: LeafID[];
@@ -118,7 +124,7 @@ export interface WikiStore extends UIState {
 
 function freshState(): WikiState {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     wikiId: uuid(),
     leaves: [],
     openIds: [],
@@ -178,7 +184,7 @@ export const useWikiStore = create<WikiStore>((set, get) => {
 
     hydrate: (s, currentUserId) => {
       set({
-        schemaVersion: 4,
+        schemaVersion: 5,
         wikiId: s.wikiId,
         leaves: s.leaves,
         openIds: s.openIds,
@@ -201,7 +207,7 @@ export const useWikiStore = create<WikiStore>((set, get) => {
     getPersistableState: () => {
       const s = get();
       return {
-        schemaVersion: 4,
+        schemaVersion: 5,
         wikiId: s.wikiId,
         leaves: s.leaves,
         openIds: s.openIds,

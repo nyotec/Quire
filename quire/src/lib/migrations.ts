@@ -9,6 +9,7 @@
  *   2 — adds users / authorship (v1.1)
  *   3 — adds protection + autolock (v1.3)
  *   4 — adds folders + per-folder encryption (v1.5)
+ *   5 — adds optional leaf.source + user.isAgent (v1.7, MCP capture)
  *
  * v1.6 introduces the export envelope but does NOT bump schemaVersion —
  * the WikiState shape is unchanged. The envelope wraps a v4 state.
@@ -17,8 +18,18 @@ import type { WikiState } from '../types';
 import { migrateToV2 } from './users';
 import { migrateToV3, migrateToV4 } from './migrate';
 
-export type SchemaVersion = 1 | 2 | 3 | 4;
-export const CURRENT_SCHEMA: SchemaVersion = 4;
+export type SchemaVersion = 1 | 2 | 3 | 4 | 5;
+export const CURRENT_SCHEMA: SchemaVersion = 5;
+
+/**
+ * v4 → v5: add `leaf.source` (optional) and `user.isAgent` (optional). Both
+ * are optional, so no existing records need modification — just bump the
+ * version marker.
+ */
+export function migrateV4ToV5(state: any): WikiState {
+  if (state && state.schemaVersion === 5) return state;
+  return { ...state, schemaVersion: 5 };
+}
 
 export interface MigrationResult {
   state: WikiState;
@@ -51,7 +62,7 @@ export function migrateToCurrent(raw: any): MigrationResult {
   };
   let state: WikiState;
   try {
-    state = migrateToV4(migrateToV3(migrateToV2(raw)));
+    state = migrateV4ToV5(migrateToV4(migrateToV3(migrateToV2(raw))));
   } finally {
     console.warn = origWarn;
   }

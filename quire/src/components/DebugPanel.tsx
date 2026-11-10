@@ -33,7 +33,7 @@ export function DebugPanel({ open, onClose }: Props) {
   const dataLength = dataBlock?.textContent?.length ?? 0;
 
   const lines: Array<[string, string]> = [
-    ['Quire', '1.6.1'],
+    ['Quire', '1.7.0'],
     ['Schema', `v${s.schemaVersion}`],
     ['Wiki ID', s.wikiId],
     ['Leaves', String(s.leaves.length)],

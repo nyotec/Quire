@@ -40,7 +40,13 @@ function ToastView({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: str
           {toast.action.label}
         </button>
       )}
-      <button className="q-toast-close" onClick={() => onDismiss(toast.id)}>
+      <button
+        className="q-toast-close"
+        onClick={() => {
+          if (toast.onBeforeDismiss && !toast.onBeforeDismiss()) return;
+          onDismiss(toast.id);
+        }}
+      >
         <Icon name="close" size={10} />
       </button>
     </div>

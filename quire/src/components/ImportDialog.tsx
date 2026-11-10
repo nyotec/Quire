@@ -15,6 +15,12 @@ interface Props {
   open: boolean;
   currentState: WikiState;
   initialFile?: File | null;
+  /**
+   * v1.7: an already-parsed WikiState to reconcile against (e.g. the connected
+   * file re-read from disk after an external change). When provided, the dialog
+   * skips file-picking and opens straight on the conflict-review step.
+   */
+  initialState?: WikiState | null;
   onCancel: () => void;
   onApply: (merged: WikiState, alsoBackupCurrent: boolean) => void;
 }
@@ -43,6 +49,7 @@ export function ImportDialog({
   open,
   currentState,
   initialFile,
+  initialState,
   onCancel,
   onApply,
 }: Props) {
@@ -59,17 +66,27 @@ export function ImportDialog({
     return false;
   });
 
-  // Reset on open / handle preselected file
+  // Reset on open / handle preselected file or in-memory state
   useEffect(() => {
     if (!open) return;
-    if (initialFile) {
+    if (initialState) {
+      // Already-parsed state (e.g. disk re-read) — go straight to review.
+      const report = detectConflicts(currentState, initialState);
+      setStep({
+        kind: 'review',
+        imported: initialState,
+        report,
+        warnings: [],
+        sourceVersion: initialState.schemaVersion,
+      });
+    } else if (initialFile) {
       void handleFile(initialFile);
     } else {
       setStep({ kind: 'pick' });
     }
     setAlsoBackup(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, initialFile]);
+  }, [open, initialFile, initialState]);
 
   const handleFile = async (file: File) => {
     setStep({ kind: 'reading' });

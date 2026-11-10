@@ -208,6 +208,10 @@ export default function App() {
   const [changePwdOpen, setChangePwdOpen] = useState<null | 'change' | 'disable'>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importInitialFile, setImportInitialFile] = useState<File | null>(null);
+  // v1.7: disk state re-read after an external change, seeding the merge dialog.
+  const [externalReloadState, setExternalReloadState] = useState<WikiState | null>(
+    null,
+  );
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportStats, setExportStats] = useState<{
     plaintext: number;
@@ -845,6 +849,32 @@ export default function App() {
         clearDecryptionCache();
         useLockState.getState().lock(null);
       };
+      // v1.7: the connected file was changed by another process (e.g. an MCP
+      // agent capturing a note). Surface it as a sticky reload prompt rather
+      // than silently overwriting on the next save.
+      persistence.onExternalChange = () => {
+        useWikiStore.getState().setRemoteUpdateAvailable(true);
+        useWikiStore.getState().pushToast({
+          message: '🔔 This wiki was updated elsewhere.',
+          ttl: 0,
+          action: {
+            label: 'Reload',
+            run: () => {
+              void handleExternalReload();
+            },
+          },
+          // Secondary confirmation when dismissing with unsaved local edits.
+          onBeforeDismiss: () => {
+            if (persistence.getStatus().pendingChanges > 0) {
+              return window.confirm(
+                'You have unsaved changes that are not yet written to the file. ' +
+                  'Dismiss this update notice without reloading?',
+              );
+            }
+            return true;
+          },
+        });
+      };
 
       // beforeunload: wipe key
       window.addEventListener('beforeunload', () => {
@@ -859,6 +889,8 @@ export default function App() {
           const ok = await persistence.verifyHandle(baseState.wikiId);
           if (ok) {
             setHasFileHandle(true);
+            // Begin watching the file for edits made outside this tab.
+            void persistence.startWatchingFile(baseState.wikiId);
           } else {
             useWikiStore.getState().pushToast({
               message: 'Could not access the connected file. Falling back to manual save.',
@@ -881,6 +913,7 @@ export default function App() {
     })();
     return () => {
       cancelled = true;
+      persistence.stopWatchingFile();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1012,6 +1045,7 @@ export default function App() {
       store.applyMergedState(merged);
       setImportDialogOpen(false);
       setImportInitialFile(null);
+      setExternalReloadState(null);
       setIntroCardVariant(null);
       // Persist the welcome dismissal since the user has now imported content
       void persistence.setMeta(`welcome:${merged.wikiId}`, {
@@ -1025,6 +1059,39 @@ export default function App() {
     },
     [store],
   );
+
+  // ─── reload from disk after an external (MCP/agent) edit ──────────────
+  const handleExternalReload = useCallback(async () => {
+    const wikiId = useWikiStore.getState().wikiId;
+    let incoming: WikiState | null = null;
+    try {
+      incoming = await persistence.reloadStateFromFile(wikiId);
+    } catch (err) {
+      console.warn('[Quire] external reload failed', err);
+    }
+    if (!incoming) {
+      useWikiStore.getState().pushToast({
+        message: 'Could not re-read the file from disk.',
+        kind: 'error',
+        ttl: 5000,
+      });
+      return;
+    }
+    const hasUnsaved = persistence.getStatus().pendingChanges > 0;
+    if (!hasUnsaved) {
+      // No local edits at risk — adopt the disk version directly.
+      store.applyMergedState(incoming);
+      useWikiStore.getState().pushToast({
+        message: 'Reloaded the latest version from disk.',
+        kind: 'success',
+        ttl: 4000,
+      });
+    } else {
+      // Local edits are unsaved — reconcile through the merge/conflict UI.
+      setExternalReloadState(incoming);
+      setImportDialogOpen(true);
+    }
+  }, [store]);
 
   // ─── export-to-JSON with plaintext warning ───────────────────────────
   const openExportDialog = useCallback(async () => {
@@ -1265,6 +1332,7 @@ export default function App() {
         try {
           await persistence.connectFile(state.wikiId);
           setHasFileHandle(true);
+          void persistence.startWatchingFile(state.wikiId);
         } catch (err: any) {
           useWikiStore.getState().pushToast({
             message: 'File picker cancelled. Falling back to download.',
@@ -1292,6 +1360,7 @@ export default function App() {
     try {
       await persistence.connectFile(state.wikiId);
       setHasFileHandle(true);
+      void persistence.startWatchingFile(state.wikiId);
       await persistence.save(state);
       useWikiStore.getState().setOnboardingDismissed(true);
       useWikiStore.getState().pushToast({
@@ -2027,9 +2096,11 @@ export default function App() {
         open={importDialogOpen}
         currentState={useWikiStore.getState().getPersistableState()}
         initialFile={importInitialFile}
+        initialState={externalReloadState}
         onCancel={() => {
           setImportDialogOpen(false);
           setImportInitialFile(null);
+          setExternalReloadState(null);
         }}
         onApply={onApplyImport}
       />
