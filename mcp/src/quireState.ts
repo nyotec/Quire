@@ -92,7 +92,7 @@ export function folderPath(state: WikiState, folderId: string | null | undefined
   if (!folderId) return '';
   const byId = new Map(state.folders.map((f) => [f.id, f] as const));
   const parts: string[] = [];
-  let cur = folderId ? byId.get(folderId) : undefined;
+  let cur = byId.get(folderId);
   let guard = 0;
   while (cur && guard++ < 64) {
     parts.unshift(cur.name);
