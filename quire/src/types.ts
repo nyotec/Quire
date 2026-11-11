@@ -78,7 +78,7 @@ export type ThemeName = 'paper' | 'ink' | 'mono';
 export type AccentName = 'ochre' | 'sage' | 'indigo' | 'rust' | 'plum';
 export type FontPair = 'editorial' | 'modern' | 'classic' | 'terminal';
 export type Density = 'compact' | 'regular' | 'comfy';
-export type LayoutName = 'river' | 'stack';
+export type LayoutName = 'river' | 'stack' | 'grid';
 export type DateFormat = 'relative' | 'absolute' | 'both';
 
 export interface TaskSettings {

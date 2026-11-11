@@ -178,7 +178,7 @@ export function SettingsDrawer({
             <Row label="Flow">
               <Seg
                 value={settings.layout}
-                options={['river', 'stack']}
+                options={['river', 'stack', 'grid']}
                 onChange={(v) => setSetting('layout', v)}
               />
             </Row>
