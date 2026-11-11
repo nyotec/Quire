@@ -408,8 +408,14 @@ kbd {
 .q-river-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(var(--q-leaf-w), 100%), 1fr));
+  /* Uniform row height: a DEFINITE height is essential — the leaf body is a
+     flex child with `flex:1; overflow:auto`, whose min-content height is 0, so
+     auto-sized rows collapse every card to just its header. Fixed rows give the
+     body a real height to fill, and the gallery stays dense and scannable;
+     longer notes preview with an internal scroll. */
+  grid-auto-rows: 34vh;
   gap: var(--q-gap);
-  align-items: start;
+  align-items: stretch;
   overflow-x: hidden;
   padding-bottom: 80px;
 }
@@ -417,10 +423,8 @@ kbd {
   width: auto;
   max-width: none;
   min-width: 0;
-  /* A definite cap gives the flex body a height reference (so content isn't
-     collapsed to the header) and keeps the gallery dense and scannable; longer
-     notes preview with an internal scroll. */
-  max-height: 48vh;
+  height: 100%;
+  max-height: none;
 }
 .q-river-grid .q-river-end { display: none; }
 
