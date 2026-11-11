@@ -1866,6 +1866,8 @@ export default function App() {
                 dateFormat={settings.tasks.dateFormat}
                 folders={store.folders}
                 onFolderClick={(fid) => onFolderFilterClick(fid, true)}
+                onDelete={() => store.deleteLeaf(leaf.id)}
+                onMoveToFolder={(fid) => store.moveLeafToFolder(leaf.id, fid)}
                 dragHandlers={dragHandlers(leaf.id)}
               />
             ))}

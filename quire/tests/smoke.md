@@ -169,6 +169,24 @@ Settings → Layout → Flow adds a third option, **grid**, alongside river/stac
 4. A note containing a very long unbroken URL does not widen its column or cause
    horizontal overflow.
 
+## v1.7.1 — delete & move a leaf
+
+Each leaf header gains a **⋯ (more)** button between Edit and Close.
+
+1. Click **⋯** on a leaf → a menu opens with "Move to folder" (a list of all
+   folders), and "Delete leaf" (in red) below a separator.
+2. Pick a folder → the leaf moves there (its header breadcrumb updates; the
+   folder's sidebar count increments). Re-opening the menu shows that folder
+   checked/disabled and a "Remove from folder" item at the top.
+3. "Remove from folder" → the leaf becomes unfiled (root).
+4. With no folders yet, the menu shows "No folders yet — create one in the
+   sidebar." instead of a folder list.
+5. **Delete leaf** → a confirm prompt; on confirm the leaf is removed from the
+   river and from the file, and the leaf/author/folder counts drop by one.
+   Cancelling leaves it untouched.
+6. The menu closes on outside-click or Esc, and clicking an item does not focus
+   or toggle-edit the leaf behind it.
+
 ## No regressions
 
 Re-run the headline checks from prior versions in **Edge**:
