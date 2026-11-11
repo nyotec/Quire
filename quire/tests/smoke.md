@@ -162,8 +162,9 @@ Settings → Layout → Flow adds a third option, **grid**, alongside river/stac
    multiple columns that fill the width — more columns on a wider window, fewer
    on a narrow one, collapsing to a single column on a phone. No horizontal
    scrollbar appears at any width.
-2. Each card is capped at roughly half the viewport height; a long note shows a
-   preview and scrolls inside its own card (all content remains reachable).
+2. Every card is the same height (a uniform gallery); a long note shows a
+   preview and scrolls inside its own card (all content remains reachable), and
+   no card collapses to just its header.
 3. Short notes stay short; switching back to river or stack is unchanged.
 4. A note containing a very long unbroken URL does not widen its column or cause
    horizontal overflow.
