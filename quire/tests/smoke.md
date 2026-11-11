@@ -122,6 +122,38 @@ DOMParser-based replacement. These tests would have caught the bug.
 6. On a browser exposing `FileSystemObserver`, the change is detected without
    waiting for the 10s poll; on others the poll path is used.
 
+## v1.7.1 — river filters browse all matching leaves
+
+Previously the river showed only *open* leaves and a filter merely narrowed that
+open set, so with nothing open a tag/author/folder filter rendered an empty
+river even while the header read "N total".
+
+1. Open a wiki with several leaves and **nothing open** → "The river is dry."
+   with a **"Show all N leaves"** button. Click it → every leaf renders; the bar
+   reads `Showing all leaves · N total`.
+2. Click a tag in the sidebar → the river shows **all** leaves with that tag
+   (not just open ones); the bar reads `Showing leaves tagged #tag · N total`.
+3. Click a person in the People list → the river shows all leaves by that author.
+4. Click a folder → all leaves in it (toggle "Include sub-folders").
+5. Sidebar **All notes** → shows every leaf (`Showing all leaves · N total`).
+6. **clear filter** → back to the open workspace ("The river is dry." if none
+   open). While a filter is active, leaf drag-reorder is disabled.
+
+## v1.7.1 — migration preserves attribution & folders
+
+A load-path bug reassigned every leaf to **Legacy author** and dropped the
+users registry and all folders whenever a wiki at schemaVersion ≥ 3 was opened
+(`migrateToV2` treated anything but exactly v2 as a v1 file). This silently
+defeated multi-user attribution, agent attribution, and folders on every reload.
+
+1. Open a wiki that has **multiple users** (or agent-authored leaves) and
+   **folders**, saved at v4/v5. After load: each leaf keeps its original author
+   (People list still shows every user, agent chips still render), and every
+   folder and `folderId` is intact. Nothing collapses to "Legacy author".
+2. A genuine **v1** file (no users registry) still gets a single *Legacy author*
+   with every leaf attributed to it — unchanged.
+3. Migrating the same file twice is idempotent (no author/folder drift).
+
 ## No regressions
 
 Re-run the headline checks from prior versions in **Edge**:

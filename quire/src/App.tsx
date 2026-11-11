@@ -697,7 +697,8 @@ export default function App() {
   const onFolderFilterClick = useCallback(
     (fid: string | null, deep: boolean) => {
       if (fid === null) {
-        store.setActiveFilter(null);
+        // "All notes" — browse every leaf, not an empty workspace.
+        store.setActiveFilter({ type: 'all' });
         return;
       }
       const folder = useWikiStore.getState().folders.find((f) => f.id === fid);
@@ -1192,53 +1193,60 @@ export default function App() {
     [leaves, currentUser],
   );
 
-  let openLeavesArr = openIds.map((id) => index.byId.get(id)).filter(Boolean) as typeof leaves;
-  if (activeFilter?.type === 'tag') {
-    openLeavesArr = openLeavesArr.filter((l) => l.tags.includes(activeFilter.value));
-  } else if (activeFilter?.type === 'author') {
-    openLeavesArr = openLeavesArr.filter((l) => l.authorId === activeFilter.value);
-  } else if (activeFilter?.type === 'folder') {
-    const target = activeFilter.value;
-    const deep = activeFilter.deep;
-    const include = new Set<string>([target]);
-    if (deep) {
-      // include all descendants
-      const queue = [target];
+  // The open "workspace": leaves the user has explicitly opened, in their order.
+  const openLeavesArr = openIds
+    .map((id) => index.byId.get(id))
+    .filter(Boolean) as typeof leaves;
+
+  // Resolve which folder ids a folder filter covers (optionally its descendants).
+  let folderFilterInclude: Set<string> | null = null;
+  if (activeFilter?.type === 'folder') {
+    folderFilterInclude = new Set<string>([activeFilter.value]);
+    if (activeFilter.deep) {
+      const queue = [activeFilter.value];
       while (queue.length) {
         const cur = queue.shift()!;
         for (const f of store.folders) {
-          if (f.parentId === cur && !include.has(f.id)) {
-            include.add(f.id);
+          if (f.parentId === cur && !folderFilterInclude.has(f.id)) {
+            folderFilterInclude.add(f.id);
             queue.push(f.id);
           }
         }
       }
     }
-    openLeavesArr = openLeavesArr.filter((l) => l.folderId && include.has(l.folderId));
   }
-  const filterTotalCount =
-    activeFilter?.type === 'tag'
-      ? leaves.filter((l) => l.tags.includes(activeFilter.value)).length
-      : activeFilter?.type === 'author'
-        ? leaves.filter((l) => l.authorId === activeFilter.value).length
-        : activeFilter?.type === 'folder'
-          ? (() => {
-              const include = new Set<string>([activeFilter.value]);
-              if (activeFilter.deep) {
-                const queue = [activeFilter.value];
-                while (queue.length) {
-                  const cur = queue.shift()!;
-                  for (const f of store.folders) {
-                    if (f.parentId === cur && !include.has(f.id)) {
-                      include.add(f.id);
-                      queue.push(f.id);
-                    }
-                  }
-                }
-              }
-              return leaves.filter((l) => l.folderId && include.has(l.folderId)).length;
-            })()
-          : 0;
+
+  const leafMatchesFilter = (l: (typeof leaves)[number]): boolean => {
+    if (!activeFilter) return false;
+    switch (activeFilter.type) {
+      case 'all':
+        return true;
+      case 'tag':
+        return l.tags.includes(activeFilter.value);
+      case 'author':
+        return l.authorId === activeFilter.value;
+      case 'folder':
+        return !!(l.folderId && folderFilterInclude?.has(l.folderId));
+      default:
+        return false;
+    }
+  };
+
+  // When a filter is active, the river shows ALL matching leaves (a browse view),
+  // not just the ones the user happens to have open — pinned first, then most
+  // recently edited. With no filter, the river is the open workspace.
+  const filteredLeaves = activeFilter
+    ? leaves
+        .filter(leafMatchesFilter)
+        .slice()
+        .sort(
+          (a, b) =>
+            Number(!!b.pinned) - Number(!!a.pinned) ||
+            new Date(b.edited).getTime() - new Date(a.edited).getTime(),
+        )
+    : [];
+  const riverLeaves = activeFilter ? filteredLeaves : openLeavesArr;
+  const filterTotalCount = filteredLeaves.length;
   const filterAuthorUser =
     activeFilter?.type === 'author' ? getUser(activeFilter.value) : null;
   const filterFolder =
@@ -1511,8 +1519,10 @@ export default function App() {
 
   // ─── drag handlers (river reorder) ────────────────────────────────────
   const draggingId = store.draggingId;
+  // Reorder applies to the open workspace only; a filtered browse is read-only
+  // for drag (its order is derived, not the user's openIds order).
   const dragHandlers = (id: string) => ({
-    draggable: true,
+    draggable: !activeFilter,
     onDragStart: (e: DragEvent) => {
       store.setDraggingId(id);
       e.dataTransfer.effectAllowed = 'move';
@@ -1719,15 +1729,19 @@ export default function App() {
         <main className="q-main">
           {activeFilter && (
             <div className="q-filter-bar">
-              {activeFilter.type === 'tag' ? (
+              {activeFilter.type === 'all' ? (
                 <span>
-                  Showing leaves tagged <b>#{activeFilter.value}</b> · {openLeavesArr.length} open ·{' '}
+                  Showing <b>all leaves</b> · {filterTotalCount} total
+                </span>
+              ) : activeFilter.type === 'tag' ? (
+                <span>
+                  Showing leaves tagged <b>#{activeFilter.value}</b> ·{' '}
                   {filterTotalCount} total
                 </span>
               ) : activeFilter.type === 'folder' ? (
                 <span>
                   Showing leaves in <b>📁 {filterFolder?.name || 'unknown'}</b> ·{' '}
-                  {openLeavesArr.length} open · {filterTotalCount} total{' '}
+                  {filterTotalCount} total{' '}
                   <label style={{ marginLeft: 12, fontSize: 11 }}>
                     <input
                       type="checkbox"
@@ -1753,7 +1767,7 @@ export default function App() {
                   )}
                   <span className="q-filter-author-chip" />
                   Showing leaves by <b>{filterAuthorUser?.name || 'unknown'}</b> ·{' '}
-                  {openLeavesArr.length} open · {filterTotalCount} total
+                  {filterTotalCount} total
                 </span>
               )}
               <button onClick={() => store.setActiveFilter(null)}>clear filter</button>
@@ -1794,20 +1808,34 @@ export default function App() {
                 spineNumbers={settings.spineNumbers}
               />
             )}
-            {openLeavesArr.length === 0 && !tasksOpen && (
+            {riverLeaves.length === 0 && !tasksOpen && (
               <div className="q-empty">
                 <div className="q-empty-mark" />
                 <h3>
                   {activeFilter?.type === 'author'
                     ? `No leaves by ${filterAuthorUser?.name || 'this user'} yet.`
-                    : 'The river is dry.'}
+                    : activeFilter?.type === 'tag'
+                      ? `No leaves tagged #${activeFilter.value}.`
+                      : activeFilter?.type === 'folder'
+                        ? `No leaves in ${filterFolder?.name || 'this folder'}.`
+                        : 'The river is dry.'}
                 </h3>
                 <p>
                   Press <kbd>⌘K</kbd> to find a leaf, or <kbd>⌘N</kbd> to write a new one.
                 </p>
+                {!activeFilter && leaves.length > 0 && (
+                  <p>
+                    <button
+                      className="q-btn-primary"
+                      onClick={() => store.setActiveFilter({ type: 'all' })}
+                    >
+                      Show all {leaves.length} leaves
+                    </button>
+                  </p>
+                )}
               </div>
             )}
-            {openLeavesArr.map((leaf, idx) => (
+            {riverLeaves.map((leaf, idx) => (
               <LeafCard
                 key={leaf.id}
                 leaf={leaf}
