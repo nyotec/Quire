@@ -154,6 +154,20 @@ defeated multi-user attribution, agent attribution, and folders on every reload.
    with every leaf attributed to it — unchanged.
 3. Migrating the same file twice is idempotent (no author/folder drift).
 
+## v1.7.1 — grid layout
+
+Settings → Layout → Flow adds a third option, **grid**, alongside river/stack.
+
+1. Pick **grid** and open "All notes" (or any filter). Leaves lay out in
+   multiple columns that fill the width — more columns on a wider window, fewer
+   on a narrow one, collapsing to a single column on a phone. No horizontal
+   scrollbar appears at any width.
+2. Each card is capped at roughly half the viewport height; a long note shows a
+   preview and scrolls inside its own card (all content remains reachable).
+3. Short notes stay short; switching back to river or stack is unchanged.
+4. A note containing a very long unbroken URL does not widen its column or cause
+   horizontal overflow.
+
 ## No regressions
 
 Re-run the headline checks from prior versions in **Edge**:

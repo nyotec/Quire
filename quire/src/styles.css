@@ -401,6 +401,28 @@ kbd {
   align-items: center;
   overflow-x: hidden;
 }
+/* Responsive grid — fits as many leaf-width columns as the available space
+   allows, so many leaves are visible at once. auto-fill + minmax keeps the
+   column count driven by the real container width (no horizontal overflow),
+   and min(...,100%) collapses to a single column on narrow screens. */
+.q-river-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--q-leaf-w), 100%), 1fr));
+  gap: var(--q-gap);
+  align-items: start;
+  overflow-x: hidden;
+  padding-bottom: 80px;
+}
+.q-river-grid .q-leaf {
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  /* A definite cap gives the flex body a height reference (so content isn't
+     collapsed to the header) and keeps the gallery dense and scannable; longer
+     notes preview with an internal scroll. */
+  max-height: 48vh;
+}
+.q-river-grid .q-river-end { display: none; }
 
 .q-river::-webkit-scrollbar { height: 10px; width: 10px; }
 .q-river::-webkit-scrollbar-thumb { background: var(--q-line-2); border-radius: 5px; }
