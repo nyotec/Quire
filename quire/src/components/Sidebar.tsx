@@ -29,6 +29,8 @@ interface SidebarProps {
   currentUserId: UserID | null;
   onOpenTasks: () => void;
   showOverdueBadge: boolean;
+  showTasks: boolean;
+  showJournal: boolean;
   folders: Folder[];
   onFolderFilter: (id: FolderID | null, deep: boolean) => void;
   onFolderCreate: (parentId: FolderID | null) => void;
@@ -54,6 +56,8 @@ export function Sidebar({
   currentUserId,
   onOpenTasks,
   showOverdueBadge,
+  showTasks,
+  showJournal,
   folders,
   onFolderFilter,
   onFolderCreate,
@@ -85,36 +89,44 @@ export function Sidebar({
 
   return (
     <aside className="q-side">
-      <button className="q-sidebar-tasks" onClick={onOpenTasks}>
-        <div className="q-sidebar-tasks-icon">☐</div>
-        <div className="q-sidebar-tasks-meta">
-          <div className="q-sidebar-tasks-label">Tasks</div>
-          <div className="q-sidebar-tasks-sub">
-            {taskCounts.dueToday > 0
-              ? `${taskCounts.dueToday} due today · `
-              : ''}
-            {taskCounts.open} open
+      {showTasks && (
+        <button className="q-sidebar-tasks" onClick={onOpenTasks}>
+          <div className="q-sidebar-tasks-icon">☐</div>
+          <div className="q-sidebar-tasks-meta">
+            <div className="q-sidebar-tasks-label">Tasks</div>
+            <div className="q-sidebar-tasks-sub">
+              {taskCounts.dueToday > 0
+                ? `${taskCounts.dueToday} due today · `
+                : ''}
+              {taskCounts.open} open
+            </div>
           </div>
-        </div>
-        {showOverdueBadge && taskCounts.overdue > 0 && (
-          <span className="q-sidebar-tasks-badge">{taskCounts.overdue}</span>
-        )}
-      </button>
+          {showOverdueBadge && taskCounts.overdue > 0 && (
+            <span className="q-sidebar-tasks-badge">{taskCounts.overdue}</span>
+          )}
+        </button>
+      )}
 
-      <button className="q-today" onClick={onJumpToday} disabled={!todayId}>
-        <div className="q-today-date">
-          <div className="q-today-mo">{monthLabel}</div>
-          <div className="q-today-day">{dayLabel}</div>
-        </div>
-        <div className="q-today-meta">
-          <div className="q-today-label">Today's journal</div>
-          <div className="q-today-sub">
-            {journalCount} {journalCount === 1 ? 'entry' : 'entries'}
-            {lastJournalEdit ? ` · last ${formatRel(lastJournalEdit.edited)}` : ''}
+      {showJournal && (
+        <button className="q-today" onClick={onJumpToday}>
+          <div className="q-today-date">
+            <div className="q-today-mo">{monthLabel}</div>
+            <div className="q-today-day">{dayLabel}</div>
           </div>
-        </div>
-        <Icon name="chevR" size={12} />
-      </button>
+          <div className="q-today-meta">
+            <div className="q-today-label">Today's journal</div>
+            <div className="q-today-sub">
+              {journalCount === 0
+                ? 'new — click to start'
+                : `${journalCount} ${journalCount === 1 ? 'entry' : 'entries'}`}
+              {lastJournalEdit
+                ? ` · last ${formatRel(lastJournalEdit.edited)}`
+                : ''}
+            </div>
+          </div>
+          <Icon name="chevR" size={12} />
+        </button>
+      )}
 
       {pinned.length > 0 && (
         <SidebarSection label="Pinned" icon="pin">

@@ -99,6 +99,10 @@ export interface Settings {
   tasks: TaskSettings;
   /** Opt-in author chips (v1.6.1). Defaults to false for solo users. */
   showAuthorAttribution: boolean;
+  /** Show the Tasks button in the sidebar (default true). v1.7.1. */
+  showTasks?: boolean;
+  /** Show the Today's journal button in the sidebar (default true). v1.7.1. */
+  showJournal?: boolean;
 }
 
 export type ProtectionMode = 'curtain' | 'password';
@@ -195,4 +199,6 @@ export const DEFAULT_SETTINGS: Settings = {
     dateFormat: 'relative',
   },
   showAuthorAttribution: false,
+  showTasks: true,
+  showJournal: true,
 };

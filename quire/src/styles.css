@@ -1495,6 +1495,9 @@ a.q-source-indicator:hover {
   letter-spacing: 0.08em;
   padding: 8px 10px 2px;
 }
+.q-tasks-group-n {
+  opacity: 0.7;
+}
 
 /* ─── sidebar Tasks row + badge + Upcoming ──────────────────────── */
 .q-sidebar-tasks {

@@ -187,6 +187,32 @@ Each leaf header gains a **⋯ (more)** button between Edit and Close.
 6. The menu closes on outside-click or Esc, and clicking an item does not focus
    or toggle-edit the leaf behind it.
 
+## v1.7.1 — daily journal, sidebar toggles, tasks-by-date
+
+**Daily journal**
+
+1. Sidebar → **Today's journal** now works even when none exists: clicking it
+   creates a dated journal leaf (title = today's date, `isJournal: true`) and
+   opens it in edit mode. The subtitle reads "new — click to start" beforehand.
+2. Click it again the same day → it re-opens the **same** leaf (no duplicate);
+   the subtitle shows "1 entry".
+3. Past daily journals remain as dated leaves (browse via All notes / search).
+
+**Sidebar toggles** (Settings → Layout)
+
+4. Toggle **Tasks button** off → the sidebar Tasks row disappears; on → returns.
+5. Toggle **Journal button** off → the Today's journal row disappears; on →
+   returns. Both default on; the setting travels with the file, so a tasks-only
+   or notes-only file can hide the others.
+
+**Tasks by date**
+
+6. Open **Tasks** → the default grouping is **By date**: tasks are grouped under
+   date headers — *Overdue*, *Today*, *Tomorrow*, then dated buckets — using each
+   task's due date (`@YYYY-MM-DD`), falling back to the day its leaf was created
+   (so tasks written in a day's journal segregate under that day).
+7. The other groupings (Due / Created / By leaf) still work.
+
 ## No regressions
 
 Re-run the headline checks from prior versions in **Edge**:

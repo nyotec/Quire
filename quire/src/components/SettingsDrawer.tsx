@@ -201,6 +201,18 @@ export function SettingsDrawer({
                 onChange={(v) => setSetting('spineNumbers', v)}
               />
             </Row>
+            <Row label="Tasks button">
+              <Toggle
+                value={settings.showTasks !== false}
+                onChange={(v) => setSetting('showTasks', v)}
+              />
+            </Row>
+            <Row label="Journal button">
+              <Toggle
+                value={settings.showJournal !== false}
+                onChange={(v) => setSetting('showJournal', v)}
+              />
+            </Row>
           </Section>
 
           <Section label="Storage">
