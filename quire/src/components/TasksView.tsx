@@ -46,7 +46,7 @@ export function TasksView({
 
   const [filter, setFilter] = useState<Filter>('open');
   const [requireDueDate, setRequireDueDate] = useState(false);
-  const [sort, setSort] = useState<TaskSort>('due');
+  const [sort, setSort] = useState<TaskSort | 'date'>('date');
 
   const folders = useWikiStore((s) => s.folders);
   const visibleLeaves = useMemo(
@@ -62,6 +62,12 @@ export function TasksView({
     if (filter === 'open') t = t.filter((x) => !x.done);
     else if (filter === 'done') t = t.filter((x) => x.done);
     if (requireDueDate) t = t.filter((x) => !!x.dueDate);
+    if (sort === 'date') {
+      // Ascending by effective date (due date, else the task's leaf day).
+      return [...t].sort((a, b) =>
+        taskDateKey(a) < taskDateKey(b) ? -1 : taskDateKey(a) > taskDateKey(b) ? 1 : 0,
+      );
+    }
     return sortTasks(t, sort);
   }, [tasks, filter, requireDueDate, sort]);
 
@@ -121,10 +127,11 @@ export function TasksView({
           <div className="q-tasks-seg" style={{ marginLeft: 'auto' }}>
             {(
               [
+                ['date', 'By date'],
                 ['due', 'Due'],
                 ['created', 'Created'],
                 ['leaf', 'By leaf'],
-              ] as [TaskSort, string][]
+              ] as [TaskSort | 'date', string][]
             ).map(([k, label]) => (
               <button key={k} className={sort === k ? 'on' : ''} onClick={() => setSort(k)}>
                 {label}
@@ -139,6 +146,17 @@ export function TasksView({
           </div>
         ) : visible.length === 0 ? (
           <div className="q-tasks-empty">No matching tasks.</div>
+        ) : sort === 'date' ? (
+          <GroupedByDate
+            tasks={visible}
+            getUser={getUser}
+            dateFormat={dateFormat}
+            exists={exists}
+            onWikilink={onWikilink}
+            onTag={onTag}
+            onToggle={onToggle}
+            onOpenLeaf={onOpenLeaf}
+          />
         ) : sort === 'leaf' ? (
           <GroupedByLeaf
             tasks={visible}
@@ -211,6 +229,95 @@ function GroupedByLeaf({
       {groups.map(([leafId, list]) => (
         <div key={leafId}>
           <div className="q-tasks-group-h">{list[0].leafTitle}</div>
+          {list.map((t) => (
+            <TaskRow
+              key={`${t.leafId}:${t.sourceLine}`}
+              task={t}
+              author={getUser(t.authorId)}
+              dateFormat={dateFormat}
+              exists={exists}
+              onToggle={() => onToggle(t)}
+              onWikilink={onWikilink}
+              onTag={onTag}
+              onOpenSource={() => onOpenLeaf(t.leafId)}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Local YYYY-MM-DD for an ISO timestamp. */
+function dayKeyLocal(iso: string): string {
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** The date a task is segregated under: its due date, else its leaf's day. */
+function taskDateKey(t: TaskInfo): string {
+  return t.dueDate || dayKeyLocal(t.leafCreated);
+}
+
+/** Friendly header for a YYYY-MM-DD bucket (Today / Tomorrow / Yesterday / date). */
+function dateHeaderLabel(key: string): string {
+  const today = dayKeyLocal(new Date().toISOString());
+  const d = new Date(key + 'T00:00:00');
+  const nice = d.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  if (key === today) return `Today · ${nice}`;
+  const oneDay = 86400000;
+  const base = new Date(today + 'T00:00:00').getTime();
+  const diff = Math.round((new Date(key + 'T00:00:00').getTime() - base) / oneDay);
+  if (diff === 1) return `Tomorrow · ${nice}`;
+  if (diff === -1) return `Yesterday · ${nice}`;
+  if (diff < 0) return `${nice} · overdue`;
+  return nice;
+}
+
+function GroupedByDate({
+  tasks,
+  getUser,
+  dateFormat,
+  exists,
+  onWikilink,
+  onTag,
+  onToggle,
+  onOpenLeaf,
+}: {
+  tasks: TaskInfo[];
+  getUser: (id: UserID | null | undefined) => User | null;
+  dateFormat: DateFormat;
+  exists: (title: string) => boolean;
+  onWikilink: (target: string) => void;
+  onTag: (tag: string) => void;
+  onToggle: (t: TaskInfo) => void;
+  onOpenLeaf: (id: LeafID) => void;
+}) {
+  const groups = useMemo(() => {
+    const m = new Map<string, TaskInfo[]>();
+    for (const t of tasks) {
+      const key = taskDateKey(t);
+      if (!m.has(key)) m.set(key, []);
+      m.get(key)!.push(t);
+    }
+    return Array.from(m.entries()).sort((a, b) =>
+      a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0,
+    );
+  }, [tasks]);
+  return (
+    <div className="q-tasks-list">
+      {groups.map(([key, list]) => (
+        <div key={key}>
+          <div className="q-tasks-group-h">
+            {dateHeaderLabel(key)}
+            <span className="q-tasks-group-n"> · {list.length}</span>
+          </div>
           {list.map((t) => (
             <TaskRow
               key={`${t.leafId}:${t.sourceLine}`}

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, DragEvent } from 'react';
+import { useCallback, useMemo, useState, useRef, useEffect, DragEvent } from 'react';
 import type {
   BacklinkRef,
   DateFormat,
@@ -42,6 +42,8 @@ interface LeafCardProps {
   dateFormat?: DateFormat;
   folders?: Folder[];
   onFolderClick?: (id: FolderID) => void;
+  onDelete: () => void;
+  onMoveToFolder: (folderId: FolderID | null) => void;
   dragHandlers: {
     draggable: boolean;
     onDragStart: (e: DragEvent) => void;
@@ -75,10 +77,49 @@ export function LeafCard({
   dateFormat,
   folders,
   onFolderClick,
+  onDelete,
+  onMoveToFolder,
   dragHandlers,
 }: LeafCardProps) {
   const accessible = folders ? isLeafAccessible(folders, leaf) : true;
   const bodyText = bodyAsString(leaf);
+
+  // ─── leaf "more" menu (move to folder / delete) ───────────────────────
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [menuOpen]);
+  useShortcuts((action) => {
+    if (!menuOpen) return false;
+    if (action === 'esc') {
+      setMenuOpen(false);
+      return true;
+    }
+    return false;
+  });
+  const folderList = folders || [];
+  const folderPathLabel = useCallback(
+    (f: Folder): string => {
+      const byId = new Map(folderList.map((x) => [x.id, x] as const));
+      const parts: string[] = [];
+      let cur: Folder | undefined = f;
+      let guard = 0;
+      while (cur && guard++ < 64) {
+        parts.unshift(cur.name);
+        cur = cur.parentId ? byId.get(cur.parentId) : undefined;
+      }
+      return parts.join(' / ');
+    },
+    [folderList],
+  );
   const onTaskToggle = useCallback(
     (line: number) => {
       const next = toggleTaskOnLine(bodyText, line);
@@ -230,6 +271,87 @@ export function LeafCard({
           >
             <Icon name={editing ? 'eye' : 'edit'} size={12} />
           </button>
+          <div className="q-leaf-menu-wrap" ref={menuRef}>
+            <button
+              className={'q-icon-btn-sm' + (menuOpen ? ' on' : '')}
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen((o) => !o);
+              }}
+              title="More — move or delete"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+            >
+              <Icon name="more" size={12} />
+            </button>
+            {menuOpen && (
+              <div
+                className="q-folder-menu q-leaf-menu"
+                role="menu"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="q-leaf-menu-label">Move to folder</div>
+                {leaf.folderId && (
+                  <button
+                    className="q-folder-menu-item"
+                    role="menuitem"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMoveToFolder(null);
+                      setMenuOpen(false);
+                    }}
+                  >
+                    <Icon name="arrow" size={12} />
+                    <span>Remove from folder</span>
+                  </button>
+                )}
+                {folderList.length === 0 ? (
+                  <div className="q-leaf-menu-empty">
+                    No folders yet — create one in the sidebar.
+                  </div>
+                ) : (
+                  folderList.map((f) => (
+                    <button
+                      key={f.id}
+                      className="q-folder-menu-item"
+                      role="menuitem"
+                      disabled={leaf.folderId === f.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onMoveToFolder(f.id);
+                        setMenuOpen(false);
+                      }}
+                    >
+                      <Icon name="book" size={12} />
+                      <span>{folderPathLabel(f)}</span>
+                      {leaf.folderId === f.id && (
+                        <Icon name="check" size={11} />
+                      )}
+                    </button>
+                  ))
+                )}
+                <div className="q-folder-menu-sep" />
+                <button
+                  className="q-folder-menu-item destructive"
+                  role="menuitem"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpen(false);
+                    if (
+                      window.confirm(
+                        `Delete "${leaf.title || 'this leaf'}"? This cannot be undone.`,
+                      )
+                    ) {
+                      onDelete();
+                    }
+                  }}
+                >
+                  <Icon name="close" size={12} />
+                  <span>Delete leaf</span>
+                </button>
+              </div>
+            )}
+          </div>
           <button
             className="q-icon-btn-sm"
             onClick={(e) => {

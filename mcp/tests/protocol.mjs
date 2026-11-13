@@ -43,11 +43,13 @@ const names = tools.tools.map((t) => t.name).sort();
 assert.deepEqual(names, [
   'create_file',
   'create_leaf',
+  'delete_leaf',
   'list_files',
   'list_topics',
   'search_leaves',
+  'update_leaf',
 ]);
-console.log('  ✓ tools/list returns all five tools');
+console.log('  ✓ tools/list returns all seven tools');
 
 const res = await client.callTool({ name: 'list_files', arguments: {} });
 const payload = JSON.parse(res.content[0].text);

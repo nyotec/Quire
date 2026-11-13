@@ -82,6 +82,8 @@ export interface WikiStore extends UIState {
   setFocused: (id: LeafID | null) => void;
   setEditing: (id: LeafID | null) => void;
   newLeaf: (title?: string) => Leaf;
+  /** Open today's journal leaf, creating a dated one if it doesn't exist yet. */
+  openTodayJournal: () => LeafID;
   updateLeaf: (next: Leaf) => void;
   updateLeafBody: (id: LeafID, plaintext: string) => Promise<void>;
   deleteLeaf: (id: LeafID) => void;
@@ -334,6 +336,62 @@ export const useWikiStore = create<WikiStore>((set, get) => {
       }
       scheduleSave();
       return leaf;
+    },
+
+    openTodayJournal: () => {
+      const dayKey = (iso: string) => {
+        const d = new Date(iso);
+        return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      };
+      const todayKey = dayKey(new Date().toISOString());
+      const existing = get().leaves.find(
+        (l) => l.isJournal && dayKey(l.created) === todayKey,
+      );
+      if (existing) {
+        get().openLeaf(existing.id);
+        return existing.id;
+      }
+      // Create a fresh dated journal leaf for today.
+      const now = new Date().toISOString();
+      const author = get().currentUserId || LEGACY_USER_ID;
+      const title = new Date().toLocaleDateString(undefined, {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+      const id = newLeafId(title);
+      const leaf: Leaf = {
+        id,
+        title,
+        body: '',
+        tags: [],
+        isJournal: true,
+        created: now,
+        edited: now,
+        authorId: author,
+        lastEditedBy: author,
+        contributors: [author],
+      };
+      set((s) => ({
+        leaves: [leaf, ...s.leaves],
+        openIds: [id, ...s.openIds.filter((x) => x !== id)],
+        focusedId: id,
+        editingId: id,
+      }));
+      if (persistence.detectTier() === 'B') {
+        const s = get();
+        persistence.setPendingChanges(s.saveStatus.pendingChanges + 1);
+      }
+      scheduleSave();
+      requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-leaf-id="${id}"]`);
+        (el as HTMLElement | null)?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+        });
+      });
+      return id;
     },
 
     updateLeaf: persistAfter((next: Leaf) => {

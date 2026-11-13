@@ -18,7 +18,7 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
-    "test": "npm run build && node tests/smoke.mjs && node tests/protocol.mjs",
+    "test": "npm run build && node tests/smoke.mjs && node tests/edit-delete.mjs && node tests/protocol.mjs",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

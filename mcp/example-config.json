@@ -12,6 +12,7 @@
   },
   "allowFileCreation": false,
   "fileCreationBaseDir": "~/notes",
+  "allowDeletion": false,
   "agentIdentity": {
     "name": "Claude",
     "icon": "🤖",

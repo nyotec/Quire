@@ -32,6 +32,12 @@ export interface QuireMcpConfig {
   allowFileCreation: boolean;
   /** Directory new files may be created under (required for create_file). */
   fileCreationBaseDir?: string;
+  /**
+   * Gate for the destructive delete_leaf tool. Defaults to false — deleting a
+   * note is irreversible, so it must be explicitly enabled. Editing
+   * (update_leaf) is not gated.
+   */
+  allowDeletion: boolean;
   agentIdentity: AgentIdentity;
   /**
    * v1.7: when true (the only supported value for now), the server refuses to
@@ -150,6 +156,7 @@ export function loadConfig(): QuireMcpConfig {
   return {
     files,
     allowFileCreation: obj.allowFileCreation === true,
+    allowDeletion: obj.allowDeletion === true,
     fileCreationBaseDir,
     agentIdentity,
     // v1.7 always refuses encrypted wikis; honour an explicit false only if a

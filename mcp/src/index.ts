@@ -24,6 +24,8 @@ import { searchLeaves } from './tools/searchLeaves.js';
 import { listFiles } from './tools/listFiles.js';
 import { listTopics } from './tools/listTopics.js';
 import { createFile } from './tools/createFile.js';
+import { updateLeaf } from './tools/updateLeaf.js';
+import { deleteLeaf } from './tools/deleteLeaf.js';
 
 const VERSION = '1.7.0';
 
@@ -149,6 +151,63 @@ const TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'update_leaf',
+    description:
+      'Edit an existing note (leaf) by id (get ids from search_leaves). Only the ' +
+      'fields you pass change; the edit is attributed to this agent. Replace the ' +
+      'body with "body" or add to it with "appendBody"; move it with "folder" or ' +
+      'unfile it with "removeFromFolder".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', description: 'Configured file name. Omit for default.' },
+        id: { type: 'string', description: 'The leaf id to edit (from search_leaves).' },
+        title: { type: 'string', description: 'New title.' },
+        body: { type: 'string', description: 'Replace the whole markdown body.' },
+        appendBody: { type: 'string', description: 'Append this to the existing body (alt to body).' },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Replace the tags (with or without a leading #).',
+        },
+        folder: { type: 'string', description: 'Move the leaf to this folder (name or id).' },
+        createFolderIfMissing: { type: 'boolean', description: 'Create the folder if missing (default true).' },
+        removeFromFolder: { type: 'boolean', description: 'Unfile the leaf (to root).' },
+        pinned: { type: 'boolean', description: 'Pin/unpin the leaf.' },
+        source: {
+          type: 'object',
+          description: 'Set/replace source attribution.',
+          properties: {
+            type: { type: 'string' },
+            id: { type: 'string' },
+            url: { type: 'string' },
+            title: { type: 'string' },
+            capturedAt: { type: 'string' },
+            capturedBy: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'delete_leaf',
+    description:
+      'Permanently delete a note (leaf) by id. Irreversible — disabled unless ' +
+      '"allowDeletion": true is set in the config. Get ids from search_leaves.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', description: 'Configured file name. Omit for default.' },
+        id: { type: 'string', description: 'The leaf id to delete (from search_leaves).' },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    },
+  },
 ];
 
 async function dispatch(
@@ -179,6 +238,10 @@ async function dispatch(
       return createLeaf(config, args);
     case 'create_file':
       return createFile(config, args);
+    case 'update_leaf':
+      return updateLeaf(config, args);
+    case 'delete_leaf':
+      return deleteLeaf(config, args);
     default:
       return { success: false, error: `Unknown tool "${name}".`, code: 'UNKNOWN_TOOL' };
   }

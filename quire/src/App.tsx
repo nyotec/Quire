@@ -1662,18 +1662,9 @@ export default function App() {
                 }
               }}
               onJumpToday={() => {
-                if (todayId) {
-                  if (isMobile) {
-                    useWikiStore.setState((s) => ({
-                      ...s,
-                      openIds: [todayId],
-                      focusedId: todayId,
-                    }));
-                    setMobileSidebarOpen(false);
-                  } else {
-                    store.openLeaf(todayId);
-                  }
-                }
+                // Create today's journal leaf if it doesn't exist yet, then open it.
+                store.openTodayJournal();
+                if (isMobile) setMobileSidebarOpen(false);
               }}
               todayId={todayId}
               tags={tags}
@@ -1697,6 +1688,8 @@ export default function App() {
                 if (isMobile) setMobileSidebarOpen(false);
               }}
               showOverdueBadge={settings.tasks.showOverdueBadge}
+              showTasks={settings.showTasks !== false}
+              showJournal={settings.showJournal !== false}
               folders={store.folders}
               showLeafCounts={true}
               onFolderFilter={(fid, deep) => {
@@ -1866,6 +1859,8 @@ export default function App() {
                 dateFormat={settings.tasks.dateFormat}
                 folders={store.folders}
                 onFolderClick={(fid) => onFolderFilterClick(fid, true)}
+                onDelete={() => store.deleteLeaf(leaf.id)}
+                onMoveToFolder={(fid) => store.moveLeafToFolder(leaf.id, fid)}
                 dragHandlers={dragHandlers(leaf.id)}
               />
             ))}
