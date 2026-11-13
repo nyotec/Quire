@@ -26,6 +26,8 @@ attribution is otherwise turned off.
 | `list_topics` | Folder structure (topics) and top tags of a wiki, to route notes into existing topics. |
 | `search_leaves` | Find existing notes by query / tag / folder; returns ranked snippets. |
 | `create_leaf` | Append a new note, attributed to the agent, optionally with a folder and source attribution. |
+| `update_leaf` | Edit an existing note by id — title, body (replace or append), tags, move folder, pin, source. Attributed to the agent. |
+| `delete_leaf` | Permanently delete a note by id (off by default; needs `allowDeletion: true`). |
 | `create_file` | Create a new empty wiki (off by default; confined to `fileCreationBaseDir`). |
 
 Every tool returns a consistent envelope: `{ "success": true, … }` or
@@ -59,6 +61,7 @@ path). See [`example-config.json`](./example-config.json):
   },
   "allowFileCreation": false,
   "fileCreationBaseDir": "~/notes",
+  "allowDeletion": false,
   "agentIdentity": { "name": "Claude", "icon": "🤖", "color": "#7c3aed" },
   "refuseEncrypted": true
 }
@@ -69,6 +72,8 @@ path). See [`example-config.json`](./example-config.json):
   `file` use it (or the sole file, if there's only one).
 - **allowFileCreation** — must be `true` for `create_file` to work.
 - **fileCreationBaseDir** — new files are confined to this directory.
+- **allowDeletion** — must be `true` for `delete_leaf` to work. Off by default
+  because deletion is irreversible. (Editing via `update_leaf` is always on.)
 - **agentIdentity** — `name`, `icon` (shown on the chip), and `color`.
 - **refuseEncrypted** — keep `true` in v1.7.
 
